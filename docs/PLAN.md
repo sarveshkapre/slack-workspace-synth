@@ -44,6 +44,10 @@ Slack Workspace Synth generates a synthetic Slack-like workspace (users, channel
 4. Implement FastAPI read-only API.
 5. Tests + lint/typecheck/build + documentation.
 
+## Shipped (most recent)
+- Cursor-based pagination for `users`, `channels`, `messages`, and `files` (keyset pagination with `X-Next-Cursor` header).
+- CLI export: `swsynth export-jsonl` for streaming JSONL exports (optionally gzipped).
+
 ## Risks
 - Large synthetic datasets may exceed memory; mitigate with streaming writes.
 - SQLite write performance; mitigate via batching + pragmas.

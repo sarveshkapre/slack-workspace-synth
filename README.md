@@ -21,6 +21,12 @@ Generate a workspace:
 swsynth generate --workspace "Acme Demo" --users 2000 --channels 80 --messages 120000 --files 5000 --seed 42 --db ./data/acme.db
 ```
 
+Export to JSONL:
+```bash
+. .venv/bin/activate
+swsynth export-jsonl --db ./data/acme.db --out ./export --compress
+```
+
 Run the API:
 ```bash
 swsynth serve --db ./data/acme.db --host 0.0.0.0 --port 8080
@@ -35,6 +41,11 @@ The server reads the DB path from `SWSYNTH_DB` (set by `swsynth serve`). You can
 - `GET /workspaces/{workspace_id}/channels`
 - `GET /workspaces/{workspace_id}/messages`
 - `GET /workspaces/{workspace_id}/files`
+
+### Pagination
+For large tables, prefer keyset pagination via the `cursor` query param on `users`, `channels`, `messages`, and `files`.
+When you pass `cursor`, the server returns `X-Next-Cursor` for the next page.
+Do not combine `cursor` and `offset`.
 
 ## Plug-ins
 Pass one or more Python module paths using `--plugin`. Each module should expose a `register(registry)` function to attach hooks.

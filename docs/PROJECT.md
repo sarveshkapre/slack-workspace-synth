@@ -22,6 +22,12 @@ swsynth generate --workspace "Acme Demo" --users 2000 --channels 80 --messages 1
 swsynth serve --db ./data/acme.db --host 0.0.0.0 --port 8080
 ```
 
+## Export to JSONL
+```bash
+. .venv/bin/activate
+swsynth export-jsonl --db ./data/acme.db --out ./export
+```
+
 ## Test
 ```bash
 make test
@@ -53,6 +59,6 @@ make release
 ```
 
 ## Next 3 improvements
-1. Add streaming export to JSONL/S3.
+1. Add JSONL import and/or S3 export.
 2. Add channel membership + DM threads.
 3. Add richer file metadata + file body generation.

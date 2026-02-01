@@ -8,6 +8,6 @@
 
 ## Next
 - Channel membership + DM threads
-- JSONL export and import
+- JSONL import
 - Data validation + schema versioning
-- Pagination + cursor-based API
+- Cursor-based API pagination (cursor docs, examples, stability guarantees)

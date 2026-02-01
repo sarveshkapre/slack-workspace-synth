@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from faker import Faker
 
@@ -12,7 +14,7 @@ from .generator import (
     generate_workspace,
 )
 from .plugins import PluginRegistry, load_plugins
-from .storage import SQLiteStore, dump_json
+from .storage import SQLiteStore, dump_json, dump_jsonl
 
 app = typer.Typer(add_completion=False)
 
@@ -113,3 +115,57 @@ def serve(
         reload=False,
         factory=False,
     )
+
+
+@app.command("export-jsonl")
+def export_jsonl(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    out: str = typer.Option("./export", help="Output directory"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    compress: bool = typer.Option(False, help="Gzip JSONL outputs"),
+    chunk_size: int = typer.Option(2000, help="SQLite fetch chunk size"),
+) -> None:
+    """Export a workspace to JSON + JSONL files (streaming)."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        workspace = store.get_workspace(resolved_workspace_id)
+        if not workspace:
+            raise typer.BadParameter(f"Workspace not found: {resolved_workspace_id}")
+
+        out_dir = Path(out) / resolved_workspace_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        dump_json(str(out_dir / "workspace.json"), {"workspace": workspace})
+        dump_json(str(out_dir / "summary.json"), store.export_summary(resolved_workspace_id))
+
+        suffix = ".jsonl.gz" if compress else ".jsonl"
+        dump_jsonl(
+            str(out_dir / f"users{suffix}"),
+            store.iter_users(resolved_workspace_id, chunk_size=chunk_size),
+            compress=compress,
+        )
+        dump_jsonl(
+            str(out_dir / f"channels{suffix}"),
+            store.iter_channels(resolved_workspace_id, chunk_size=chunk_size),
+            compress=compress,
+        )
+        dump_jsonl(
+            str(out_dir / f"messages{suffix}"),
+            store.iter_messages(resolved_workspace_id, chunk_size=chunk_size),
+            compress=compress,
+        )
+        dump_jsonl(
+            str(out_dir / f"files{suffix}"),
+            store.iter_files(resolved_workspace_id, chunk_size=chunk_size),
+            compress=compress,
+        )
+
+        typer.echo(f"Wrote export to: {out_dir}")
+    finally:
+        store.close()

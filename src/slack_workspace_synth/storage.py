@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -82,10 +83,18 @@ class SQLiteStore:
             );
 
             CREATE INDEX IF NOT EXISTS idx_users_workspace ON users(workspace_id);
+            CREATE INDEX IF NOT EXISTS idx_users_workspace_id ON users(workspace_id, id);
             CREATE INDEX IF NOT EXISTS idx_channels_workspace ON channels(workspace_id);
+            CREATE INDEX IF NOT EXISTS idx_channels_workspace_id ON channels(workspace_id, id);
             CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id);
+            CREATE INDEX IF NOT EXISTS idx_messages_workspace_ts_id ON messages(
+                workspace_id, ts DESC, id DESC
+            );
             CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id);
+            CREATE INDEX IF NOT EXISTS idx_files_workspace_ts_id ON files(
+                workspace_id, created_ts DESC, id DESC
+            );
             """
         )
         self.conn.commit()
@@ -177,6 +186,14 @@ class SQLiteStore:
         cursor = self.conn.execute("SELECT * FROM workspaces ORDER BY created_at DESC")
         return [dict(row) for row in cursor.fetchall()]
 
+    def latest_workspace_id(self) -> str | None:
+        row = self.conn.execute(
+            "SELECT id FROM workspaces ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        return str(row["id"])
+
     def get_workspace(self, workspace_id: str) -> dict[str, object] | None:
         cursor = self.conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,))
         row = cursor.fetchone()
@@ -189,12 +206,103 @@ class SQLiteStore:
         )
         return [dict(row) for row in cursor.fetchall()]
 
+    def list_users_page(
+        self, workspace_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[dict[str, object]], str | None]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+
+        decoded = decode_id_cursor(cursor) if cursor else None
+        if decoded:
+            where.append("id > ?")
+            params.append(decoded["id"])
+
+        sql = f"SELECT * FROM users WHERE {' AND '.join(where)} ORDER BY id ASC LIMIT ?"
+        params.append(limit + 1)
+        rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = encode_id_cursor(str(last["id"]))
+            rows = rows[:limit]
+        return rows, next_cursor
+
     def list_channels(self, workspace_id: str, limit: int, offset: int) -> list[dict[str, object]]:
         cursor = self.conn.execute(
             "SELECT * FROM channels WHERE workspace_id = ? LIMIT ? OFFSET ?",
             (workspace_id, limit, offset),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+    def list_channels_page(
+        self, workspace_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[dict[str, object]], str | None]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+
+        decoded = decode_id_cursor(cursor) if cursor else None
+        if decoded:
+            where.append("id > ?")
+            params.append(decoded["id"])
+
+        sql = f"SELECT * FROM channels WHERE {' AND '.join(where)} ORDER BY id ASC LIMIT ?"
+        params.append(limit + 1)
+        rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = encode_id_cursor(str(last["id"]))
+            rows = rows[:limit]
+        return rows, next_cursor
+
+    def _iter_query(
+        self, sql: str, params: tuple[object, ...], *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        cursor = self.conn.execute(sql, params)
+        while True:
+            rows = cursor.fetchmany(chunk_size)
+            if not rows:
+                return
+            for row in rows:
+                yield dict(row)
+
+    def iter_users(
+        self, workspace_id: str, *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM users WHERE workspace_id = ? ORDER BY id ASC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
+    def iter_channels(
+        self, workspace_id: str, *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM channels WHERE workspace_id = ? ORDER BY id ASC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
+    def iter_messages(
+        self, workspace_id: str, *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM messages WHERE workspace_id = ? ORDER BY ts DESC, id DESC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
+    def iter_files(
+        self, workspace_id: str, *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM files WHERE workspace_id = ? ORDER BY created_ts DESC, id DESC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
 
     def list_messages(self, workspace_id: str, limit: int, offset: int) -> list[dict[str, object]]:
         cursor = self.conn.execute(
@@ -203,12 +311,105 @@ class SQLiteStore:
         )
         return [dict(row) for row in cursor.fetchall()]
 
+    def list_messages_page(
+        self,
+        workspace_id: str,
+        *,
+        limit: int,
+        cursor: str | None,
+        channel_id: str | None = None,
+        user_id: str | None = None,
+        before_ts: int | None = None,
+        after_ts: int | None = None,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+
+        if channel_id:
+            where.append("channel_id = ?")
+            params.append(channel_id)
+        if user_id:
+            where.append("user_id = ?")
+            params.append(user_id)
+        if before_ts is not None:
+            where.append("ts < ?")
+            params.append(before_ts)
+        if after_ts is not None:
+            where.append("ts > ?")
+            params.append(after_ts)
+
+        decoded = decode_cursor(cursor) if cursor else None
+        if decoded:
+            where.append("(ts < ? OR (ts = ? AND id < ?))")
+            params.extend([decoded["ts"], decoded["ts"], decoded["id"]])
+
+        sql = (
+            f"SELECT * FROM messages WHERE {' AND '.join(where)} ORDER BY ts DESC, id DESC LIMIT ?"
+        )
+        params.append(limit + 1)
+        rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = encode_cursor(int(last["ts"]), str(last["id"]))
+            rows = rows[:limit]
+        return rows, next_cursor
+
     def list_files(self, workspace_id: str, limit: int, offset: int) -> list[dict[str, object]]:
         cursor = self.conn.execute(
             "SELECT * FROM files WHERE workspace_id = ? ORDER BY created_ts DESC LIMIT ? OFFSET ?",
             (workspace_id, limit, offset),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+    def list_files_page(
+        self,
+        workspace_id: str,
+        *,
+        limit: int,
+        cursor: str | None,
+        channel_id: str | None = None,
+        user_id: str | None = None,
+        before_ts: int | None = None,
+        after_ts: int | None = None,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+
+        if channel_id:
+            where.append("channel_id = ?")
+            params.append(channel_id)
+        if user_id:
+            where.append("user_id = ?")
+            params.append(user_id)
+        if before_ts is not None:
+            where.append("created_ts < ?")
+            params.append(before_ts)
+        if after_ts is not None:
+            where.append("created_ts > ?")
+            params.append(after_ts)
+
+        decoded = decode_cursor(cursor) if cursor else None
+        if decoded:
+            where.append("(created_ts < ? OR (created_ts = ? AND id < ?))")
+            params.extend([decoded["ts"], decoded["ts"], decoded["id"]])
+
+        sql = (
+            "SELECT * FROM files"
+            f" WHERE {' AND '.join(where)}"
+            " ORDER BY created_ts DESC, id DESC"
+            " LIMIT ?"
+        )
+        params.append(limit + 1)
+        rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = encode_cursor(int(last["created_ts"]), str(last["id"]))
+            rows = rows[:limit]
+        return rows, next_cursor
 
     def stats(self, workspace_id: str) -> dict[str, int]:
         cursor = self.conn.cursor()
@@ -233,3 +434,70 @@ def dump_json(path: str, payload: dict[str, object]) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+
+
+def dump_jsonl(path: str, rows: Iterable[dict[str, object]], *, compress: bool = False) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if compress:
+        import gzip
+
+        with gzip.open(path, "wt", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False))
+                f.write("\n")
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False))
+            f.write("\n")
+
+
+def encode_cursor(ts: int, row_id: str) -> str:
+    payload = json.dumps(
+        {"ts": ts, "id": row_id}, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_cursor(cursor: str) -> dict[str, object] | None:
+    if not cursor:
+        return None
+    padded = cursor + "=" * (-len(cursor) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise ValueError("invalid cursor") from None
+    if not isinstance(decoded, dict):
+        raise ValueError("invalid cursor")
+    if "ts" not in decoded or "id" not in decoded:
+        raise ValueError("invalid cursor")
+    ts = decoded["ts"]
+    row_id = decoded["id"]
+    if not isinstance(ts, int) or not isinstance(row_id, str):
+        raise ValueError("invalid cursor")
+    return {"ts": ts, "id": row_id}
+
+
+def encode_id_cursor(row_id: str) -> str:
+    payload = json.dumps({"id": row_id}, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_id_cursor(cursor: str) -> dict[str, object] | None:
+    if not cursor:
+        return None
+    padded = cursor + "=" * (-len(cursor) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise ValueError("invalid cursor") from None
+    if not isinstance(decoded, dict):
+        raise ValueError("invalid cursor")
+    if "id" not in decoded:
+        raise ValueError("invalid cursor")
+    row_id = decoded["id"]
+    if not isinstance(row_id, str):
+        raise ValueError("invalid cursor")
+    return {"id": row_id}
