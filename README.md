@@ -53,6 +53,9 @@ For large tables, prefer keyset pagination via the `cursor` query param on `user
 When you pass `cursor`, the server returns `X-Next-Cursor` for the next page.
 Do not combine `cursor` and `offset`.
 
+### Reproducibility metadata
+`GET /workspaces/{workspace_id}` (and `summary.json` exports) include a `meta` object with the seed, requested sizes, plugins, and generator version.
+
 ## Plug-ins
 Pass one or more Python module paths using `--plugin`. Each module should expose a `register(registry)` function to attach hooks.
 

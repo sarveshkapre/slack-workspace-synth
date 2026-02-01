@@ -5,6 +5,7 @@
 - API: cursor/keyset pagination for `users`, `channels`, `messages`, and `files` via `cursor` + `X-Next-Cursor`.
 - Storage: added supporting indexes for keyset pagination.
 - CLI: `swsynth stats` for quick workspace counts (optionally writes summary JSON).
+- SQLite: persist per-workspace `meta` (seed, requested sizes, plugins, generator version) and include it in summary output.
 
 ## How to verify
 ```bash

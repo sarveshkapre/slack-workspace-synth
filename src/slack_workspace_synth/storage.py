@@ -36,6 +36,14 @@ class SQLiteStore:
                 created_at INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS workspace_meta (
+                workspace_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (workspace_id, key),
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+            );
+
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
@@ -95,6 +103,7 @@ class SQLiteStore:
             CREATE INDEX IF NOT EXISTS idx_files_workspace_ts_id ON files(
                 workspace_id, created_ts DESC, id DESC
             );
+            CREATE INDEX IF NOT EXISTS idx_workspace_meta_workspace ON workspace_meta(workspace_id);
             """
         )
         self.conn.commit()
@@ -198,6 +207,35 @@ class SQLiteStore:
         cursor = self.conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+    def set_workspace_meta(self, workspace_id: str, meta: dict[str, object]) -> None:
+        rows: list[tuple[str, str, str]] = []
+        for key, value in meta.items():
+            try:
+                encoded = json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                encoded = json.dumps(str(value), ensure_ascii=False)
+            rows.append((workspace_id, key, encoded))
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO workspace_meta (workspace_id, key, value) VALUES (?, ?, ?)",
+            rows,
+        )
+        self.conn.commit()
+
+    def get_workspace_meta(self, workspace_id: str) -> dict[str, object]:
+        cursor = self.conn.execute(
+            "SELECT key, value FROM workspace_meta WHERE workspace_id = ? ORDER BY key ASC",
+            (workspace_id,),
+        )
+        meta: dict[str, object] = {}
+        for row in cursor.fetchall():
+            key = str(row["key"])
+            raw = str(row["value"])
+            try:
+                meta[key] = json.loads(raw)
+            except Exception:
+                meta[key] = raw
+        return meta
 
     def list_users(self, workspace_id: str, limit: int, offset: int) -> list[dict[str, object]]:
         cursor = self.conn.execute(
@@ -426,7 +464,11 @@ class SQLiteStore:
         workspace = self.get_workspace(workspace_id)
         if not workspace:
             raise ValueError("workspace not found")
-        summary = {"workspace": workspace, "counts": self.stats(workspace_id)}
+        summary = {
+            "workspace": workspace,
+            "meta": self.get_workspace_meta(workspace_id),
+            "counts": self.stats(workspace_id),
+        }
         return summary
 
 

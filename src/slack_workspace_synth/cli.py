@@ -19,6 +19,8 @@ from .storage import SQLiteStore, dump_json, dump_jsonl
 
 app = typer.Typer(add_completion=False)
 
+_PKG_VERSION = __import__("slack_workspace_synth").__version__
+
 
 def _resolve_plugins(modules: list[str] | None) -> PluginRegistry:
     if not modules:
@@ -58,6 +60,23 @@ def generate(
     try:
         workspace_obj = generate_workspace(config, plugins)
         store.insert_workspace(workspace_obj)
+        store.set_workspace_meta(
+            workspace_obj.id,
+            {
+                "generator": "slack-workspace-synth",
+                "generator_version": _PKG_VERSION,
+                "seed": seed,
+                "requested": {
+                    "users": users,
+                    "channels": channels,
+                    "messages": messages,
+                    "files": files,
+                    "batch_size": batch_size,
+                    "workspace_name": workspace,
+                    "plugins": plugin or [],
+                },
+            },
+        )
 
         user_list = generate_users(config, workspace_obj.id, rng, faker, plugins)
         store.insert_users(user_list)
