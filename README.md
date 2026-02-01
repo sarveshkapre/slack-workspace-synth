@@ -27,6 +27,12 @@ Export to JSONL:
 swsynth export-jsonl --db ./data/acme.db --out ./export --compress
 ```
 
+Quick stats:
+```bash
+. .venv/bin/activate
+swsynth stats --db ./data/acme.db
+```
+
 Run the API:
 ```bash
 swsynth serve --db ./data/acme.db --host 0.0.0.0 --port 8080

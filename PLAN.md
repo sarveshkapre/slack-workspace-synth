@@ -20,11 +20,13 @@ See `docs/PROJECT.md` for the full command list.
 
 ## Shipped (2026-02-01)
 - Added `swsynth export-jsonl` to stream JSONL exports (optionally gzipped).
-- Added cursor (keyset) pagination for API `messages` and `files` with `X-Next-Cursor`.
+- Added cursor (keyset) pagination for API `users`, `channels`, `messages`, and `files` with `X-Next-Cursor`.
+- Added `swsynth stats` for quick workspace counts.
 
 ## Planning memory
 - Canonical plan + roadmap live in `docs/PLAN.md` and `docs/ROADMAP.md`.
 
 ## Next
-- Add cursor pagination to `users` and `channels`.
-- Add a CLI `stats` command (quick counts without export).
+- Add JSONL import (re-hydrate SQLite from exports).
+- Add channel membership + DM threads.
+- Add schema/version metadata for DBs.

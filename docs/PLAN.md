@@ -47,6 +47,7 @@ Slack Workspace Synth generates a synthetic Slack-like workspace (users, channel
 ## Shipped (most recent)
 - Cursor-based pagination for `users`, `channels`, `messages`, and `files` (keyset pagination with `X-Next-Cursor` header).
 - CLI export: `swsynth export-jsonl` for streaming JSONL exports (optionally gzipped).
+- CLI stats: `swsynth stats` for quick workspace counts.
 
 ## Risks
 - Large synthetic datasets may exceed memory; mitigate with streaming writes.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -167,5 +168,46 @@ def export_jsonl(
         )
 
         typer.echo(f"Wrote export to: {out_dir}")
+    finally:
+        store.close()
+
+
+@app.command()
+def stats(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    json_out: str | None = typer.Option(None, help="Write summary JSON path"),
+) -> None:
+    """Print workspace counts (and optionally write summary JSON)."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        summary = store.export_summary(resolved_workspace_id)
+        if json_out:
+            dump_json(json_out, summary)
+
+        workspace = summary["workspace"]
+        counts = summary["counts"]
+        if not isinstance(workspace, dict) or not isinstance(counts, dict):
+            raise RuntimeError("unexpected summary shape")
+
+        created_at = workspace.get("created_at")
+        created_at_iso = None
+        if isinstance(created_at, int):
+            created_at_iso = datetime.fromtimestamp(created_at, tz=UTC).isoformat()
+
+        typer.echo(f"Workspace: {workspace.get('name')} ({workspace.get('id')})")
+        if created_at_iso:
+            typer.echo(f"Created:  {created_at_iso}")
+        typer.echo("Counts:")
+        for key in ("users", "channels", "messages", "files"):
+            typer.echo(f"- {key}: {counts.get(key)}")
+        if json_out:
+            typer.echo(f"Wrote summary JSON to: {json_out}")
     finally:
         store.close()

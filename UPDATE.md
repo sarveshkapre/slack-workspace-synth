@@ -4,6 +4,7 @@
 - CLI: `swsynth export-jsonl` to stream JSONL exports (optionally gzipped).
 - API: cursor/keyset pagination for `users`, `channels`, `messages`, and `files` via `cursor` + `X-Next-Cursor`.
 - Storage: added supporting indexes for keyset pagination.
+- CLI: `swsynth stats` for quick workspace counts (optionally writes summary JSON).
 
 ## How to verify
 ```bash
@@ -25,4 +26,3 @@ curl -i "http://127.0.0.1:8080/workspaces/<workspace_id>/messages?cursor=&limit=
 
 ## Notes
 - Per request: no PRs created/updated; work is committed directly on `main`.
-
