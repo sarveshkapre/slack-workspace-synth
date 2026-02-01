@@ -49,6 +49,7 @@ Slack Workspace Synth generates a synthetic Slack-like workspace (users, channel
 - CLI export: `swsynth export-jsonl` for streaming JSONL exports (optionally gzipped).
 - CLI stats: `swsynth stats` for quick workspace counts.
 - Stored per-workspace generation `meta` (seed/requested/plugins/version) in SQLite and included it in summaries.
+- CLI import: `swsynth import-jsonl` to load JSONL exports back into SQLite.
 
 ## Risks
 - Large synthetic datasets may exceed memory; mitigate with streaming writes.

@@ -494,6 +494,26 @@ def dump_jsonl(path: str, rows: Iterable[dict[str, object]], *, compress: bool =
             f.write("\n")
 
 
+def load_jsonl(path: str) -> Iterable[dict[str, object]]:
+    def _iter_lines(handle: Iterable[str]) -> Iterable[str]:
+        for line in handle:
+            raw = line.strip()
+            if raw:
+                yield raw
+
+    if path.endswith(".gz"):
+        import gzip
+
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            for line in _iter_lines(f):
+                yield json.loads(line)
+        return
+
+    with open(path, encoding="utf-8") as f:
+        for line in _iter_lines(f):
+            yield json.loads(line)
+
+
 def encode_cursor(ts: int, row_id: str) -> str:
     payload = json.dumps(
         {"ts": ts, "id": row_id}, separators=(",", ":"), ensure_ascii=False

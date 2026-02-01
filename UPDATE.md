@@ -6,6 +6,7 @@
 - Storage: added supporting indexes for keyset pagination.
 - CLI: `swsynth stats` for quick workspace counts (optionally writes summary JSON).
 - SQLite: persist per-workspace `meta` (seed, requested sizes, plugins, generator version) and include it in summary output.
+- CLI: `swsynth import-jsonl` to ingest JSONL exports into SQLite.
 
 ## How to verify
 ```bash

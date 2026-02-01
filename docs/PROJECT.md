@@ -28,6 +28,12 @@ swsynth serve --db ./data/acme.db --host 0.0.0.0 --port 8080
 swsynth export-jsonl --db ./data/acme.db --out ./export
 ```
 
+## Import from JSONL
+```bash
+. .venv/bin/activate
+swsynth import-jsonl --source ./export --db ./data/imported.db
+```
+
 ## Stats
 ```bash
 . .venv/bin/activate

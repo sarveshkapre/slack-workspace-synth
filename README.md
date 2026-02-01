@@ -27,6 +27,12 @@ Export to JSONL:
 swsynth export-jsonl --db ./data/acme.db --out ./export --compress
 ```
 
+Import from JSONL:
+```bash
+. .venv/bin/activate
+swsynth import-jsonl --source ./export --db ./data/imported.db
+```
+
 Quick stats:
 ```bash
 . .venv/bin/activate

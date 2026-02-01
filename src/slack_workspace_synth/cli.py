@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import typer
 from faker import Faker
@@ -14,8 +16,9 @@ from .generator import (
     generate_users,
     generate_workspace,
 )
+from .models import Channel, File, Message, User, Workspace
 from .plugins import PluginRegistry, load_plugins
-from .storage import SQLiteStore, dump_json, dump_jsonl
+from .storage import SQLiteStore, dump_json, dump_jsonl, load_jsonl
 
 app = typer.Typer(add_completion=False)
 
@@ -112,6 +115,183 @@ def generate(
         if export_summary:
             summary = store.export_summary(workspace_obj.id)
             dump_json(export_summary, summary)
+    finally:
+        store.close()
+
+
+@app.command("import-jsonl")
+def import_jsonl(
+    source: str = typer.Option("./export", help="Export directory (workspace id subdir)"),
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to first subdir in export)"
+    ),
+    force: bool = typer.Option(False, help="Overwrite existing DB"),
+    batch_size: int = typer.Option(1000, help="Insert batch size"),
+) -> None:
+    """Import JSONL export directory into SQLite."""
+    source_path = Path(source)
+    if not source_path.exists():
+        raise typer.BadParameter(f"Export directory not found: {source}")
+
+    if force and Path(db).exists():
+        Path(db).unlink()
+
+    resolved_workspace_id = workspace_id
+    if not resolved_workspace_id:
+        candidates = sorted([p.name for p in source_path.iterdir() if p.is_dir()])
+        if not candidates:
+            raise typer.BadParameter("No workspace export directories found.")
+        resolved_workspace_id = candidates[0]
+
+    export_dir = source_path / resolved_workspace_id
+    if not export_dir.exists():
+        raise typer.BadParameter(f"Workspace export not found: {export_dir}")
+
+    workspace_path = export_dir / "workspace.json"
+    if not workspace_path.exists():
+        raise typer.BadParameter("workspace.json missing in export directory")
+
+    with open(workspace_path, encoding="utf-8") as f:
+        workspace_payload = json.load(f)
+
+    workspace_data = workspace_payload.get("workspace")
+    if not isinstance(workspace_data, dict):
+        raise typer.BadParameter("workspace.json missing workspace object")
+
+    workspace_obj = Workspace(
+        id=str(workspace_data["id"]),
+        name=str(workspace_data["name"]),
+        created_at=int(workspace_data["created_at"]),
+    )
+
+    summary_path = export_dir / "summary.json"
+    meta: dict[str, object] = {}
+    if summary_path.exists():
+        with open(summary_path, encoding="utf-8") as f:
+            summary_payload = json.load(f)
+            meta = summary_payload.get("meta", {}) if isinstance(summary_payload, dict) else {}
+
+    store = SQLiteStore(db)
+    try:
+        store.insert_workspace(workspace_obj)
+        if meta:
+            store.set_workspace_meta(workspace_obj.id, meta)
+
+        def _get_str(row: dict[str, Any], key: str, default: str | None = None) -> str:
+            value = row.get(key, default)
+            if value is None:
+                raise typer.BadParameter(f"Missing required field: {key}")
+            return str(value)
+
+        def _get_int(row: dict[str, Any], key: str, default: int | None = None) -> int:
+            value = row.get(key, default)
+            if value is None:
+                raise typer.BadParameter(f"Missing required field: {key}")
+            return int(value)
+
+        def _get_optional_int(row: dict[str, Any], key: str) -> int | None:
+            value = row.get(key)
+            return int(value) if value is not None else None
+
+        def _import_users(path: Path) -> None:
+            buffer: list[User] = []
+            for row in load_jsonl(str(path)):
+                data = row if isinstance(row, dict) else {}
+                buffer.append(
+                    User(
+                        id=_get_str(data, "id"),
+                        workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
+                        name=_get_str(data, "name"),
+                        email=_get_str(data, "email"),
+                        title=_get_str(data, "title"),
+                        is_bot=_get_int(data, "is_bot"),
+                    )
+                )
+                if len(buffer) >= batch_size:
+                    store.insert_users(buffer)
+                    buffer = []
+            if buffer:
+                store.insert_users(buffer)
+
+        def _import_channels(path: Path) -> None:
+            buffer: list[Channel] = []
+            for row in load_jsonl(str(path)):
+                data = row if isinstance(row, dict) else {}
+                buffer.append(
+                    Channel(
+                        id=_get_str(data, "id"),
+                        workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
+                        name=_get_str(data, "name"),
+                        is_private=_get_int(data, "is_private"),
+                        topic=_get_str(data, "topic"),
+                    )
+                )
+                if len(buffer) >= batch_size:
+                    store.insert_channels(buffer)
+                    buffer = []
+            if buffer:
+                store.insert_channels(buffer)
+
+        def _import_messages(path: Path) -> None:
+            buffer: list[Message] = []
+            for row in load_jsonl(str(path)):
+                data = row if isinstance(row, dict) else {}
+                buffer.append(
+                    Message(
+                        id=_get_str(data, "id"),
+                        workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
+                        channel_id=_get_str(data, "channel_id"),
+                        user_id=_get_str(data, "user_id"),
+                        ts=_get_int(data, "ts"),
+                        text=_get_str(data, "text"),
+                        thread_ts=_get_optional_int(data, "thread_ts"),
+                        reply_count=_get_int(data, "reply_count"),
+                        reactions_json=_get_str(data, "reactions_json"),
+                    )
+                )
+                if len(buffer) >= batch_size:
+                    store.insert_messages(buffer)
+                    buffer = []
+            if buffer:
+                store.insert_messages(buffer)
+
+        def _import_files(path: Path) -> None:
+            buffer: list[File] = []
+            for row in load_jsonl(str(path)):
+                data = row if isinstance(row, dict) else {}
+                buffer.append(
+                    File(
+                        id=_get_str(data, "id"),
+                        workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
+                        user_id=_get_str(data, "user_id"),
+                        name=_get_str(data, "name"),
+                        size=_get_int(data, "size"),
+                        mimetype=_get_str(data, "mimetype"),
+                        created_ts=_get_int(data, "created_ts"),
+                        channel_id=_get_str(data, "channel_id"),
+                        message_id=_get_str(data, "message_id") if data.get("message_id") else None,
+                        url=_get_str(data, "url"),
+                    )
+                )
+                if len(buffer) >= batch_size:
+                    store.insert_files(buffer)
+                    buffer = []
+            if buffer:
+                store.insert_files(buffer)
+
+        def _pick(path: Path, stem: str) -> Path:
+            gz = path / f"{stem}.jsonl.gz"
+            if gz.exists():
+                return gz
+            return path / f"{stem}.jsonl"
+
+        _import_users(_pick(export_dir, "users"))
+        _import_channels(_pick(export_dir, "channels"))
+        _import_messages(_pick(export_dir, "messages"))
+        _import_files(_pick(export_dir, "files"))
+
+        typer.echo(f"Imported workspace {workspace_obj.id} into {db}")
     finally:
         store.close()
 
