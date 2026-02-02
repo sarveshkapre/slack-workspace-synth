@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-from .models import Channel, File, Message, User, Workspace
+from .models import Channel, ChannelMember, File, Message, User, Workspace
 
 
 class SQLiteStore:
@@ -59,7 +59,16 @@ class SQLiteStore:
                 workspace_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 is_private INTEGER NOT NULL,
+                channel_type TEXT NOT NULL,
                 topic TEXT NOT NULL,
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS channel_members (
+                channel_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                PRIMARY KEY (channel_id, user_id),
                 FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
             );
 
@@ -94,6 +103,12 @@ class SQLiteStore:
             CREATE INDEX IF NOT EXISTS idx_users_workspace_id ON users(workspace_id, id);
             CREATE INDEX IF NOT EXISTS idx_channels_workspace ON channels(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_channels_workspace_id ON channels(workspace_id, id);
+            CREATE INDEX IF NOT EXISTS idx_channel_members_workspace ON channel_members(
+                workspace_id
+            );
+            CREATE INDEX IF NOT EXISTS idx_channel_members_channel ON channel_members(
+                channel_id
+            );
             CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id);
             CREATE INDEX IF NOT EXISTS idx_messages_workspace_ts_id ON messages(
@@ -106,7 +121,18 @@ class SQLiteStore:
             CREATE INDEX IF NOT EXISTS idx_workspace_meta_workspace ON workspace_meta(workspace_id);
             """
         )
+        self._ensure_column("channels", "channel_type", "TEXT", "public")
         self.conn.commit()
+
+    def _ensure_column(self, table: str, column: str, column_type: str, default: str) -> None:
+        cursor = self.conn.execute(f"PRAGMA table_info({table})")
+        existing = {row["name"] for row in cursor.fetchall()}
+        if column in existing:
+            return
+        escaped = default.replace("'", "''")
+        self.conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {column_type} NOT NULL DEFAULT '{escaped}'"
+        )
 
     def close(self) -> None:
         self.conn.close()
@@ -130,11 +156,25 @@ class SQLiteStore:
         self.conn.commit()
 
     def insert_channels(self, channels: Iterable[Channel]) -> None:
-        rows = [(c.id, c.workspace_id, c.name, c.is_private, c.topic) for c in channels]
+        rows = [
+            (c.id, c.workspace_id, c.name, c.is_private, c.channel_type, c.topic)
+            for c in channels
+        ]
         self.conn.executemany(
             (
-                "INSERT INTO channels (id, workspace_id, name, is_private, topic) "
-                "VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO channels (id, workspace_id, name, is_private, channel_type, topic) "
+                "VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            rows,
+        )
+        self.conn.commit()
+
+    def insert_channel_members(self, members: Iterable[ChannelMember]) -> None:
+        rows = [(m.channel_id, m.workspace_id, m.user_id) for m in members]
+        self.conn.executemany(
+            (
+                "INSERT OR IGNORE INTO channel_members (channel_id, workspace_id, user_id) "
+                "VALUES (?, ?, ?)"
             ),
             rows,
         )
@@ -266,18 +306,40 @@ class SQLiteStore:
             rows = rows[:limit]
         return rows, next_cursor
 
-    def list_channels(self, workspace_id: str, limit: int, offset: int) -> list[dict[str, object]]:
-        cursor = self.conn.execute(
-            "SELECT * FROM channels WHERE workspace_id = ? LIMIT ? OFFSET ?",
-            (workspace_id, limit, offset),
-        )
+    def list_channels(
+        self,
+        workspace_id: str,
+        limit: int,
+        offset: int,
+        *,
+        channel_type: str | None = None,
+    ) -> list[dict[str, object]]:
+        if channel_type:
+            cursor = self.conn.execute(
+                "SELECT * FROM channels WHERE workspace_id = ? AND channel_type = ? LIMIT ? OFFSET ?",
+                (workspace_id, channel_type, limit, offset),
+            )
+        else:
+            cursor = self.conn.execute(
+                "SELECT * FROM channels WHERE workspace_id = ? LIMIT ? OFFSET ?",
+                (workspace_id, limit, offset),
+            )
         return [dict(row) for row in cursor.fetchall()]
 
     def list_channels_page(
-        self, workspace_id: str, *, limit: int, cursor: str | None
+        self,
+        workspace_id: str,
+        *,
+        limit: int,
+        cursor: str | None,
+        channel_type: str | None = None,
     ) -> tuple[list[dict[str, object]], str | None]:
         where = ["workspace_id = ?"]
         params: list[object] = [workspace_id]
+
+        if channel_type:
+            where.append("channel_type = ?")
+            params.append(channel_type)
 
         decoded = decode_id_cursor(cursor) if cursor else None
         if decoded:
@@ -292,6 +354,59 @@ class SQLiteStore:
         if len(rows) > limit:
             last = rows[limit - 1]
             next_cursor = encode_id_cursor(str(last["id"]))
+            rows = rows[:limit]
+        return rows, next_cursor
+
+    def list_channel_members(
+        self, workspace_id: str, limit: int, offset: int, *, channel_id: str | None = None
+    ) -> list[dict[str, object]]:
+        if channel_id:
+            cursor = self.conn.execute(
+                "SELECT * FROM channel_members WHERE workspace_id = ? AND channel_id = ? LIMIT ? OFFSET ?",
+                (workspace_id, channel_id, limit, offset),
+            )
+        else:
+            cursor = self.conn.execute(
+                "SELECT * FROM channel_members WHERE workspace_id = ? LIMIT ? OFFSET ?",
+                (workspace_id, limit, offset),
+            )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def list_channel_members_page(
+        self,
+        workspace_id: str,
+        *,
+        limit: int,
+        cursor: str | None,
+        channel_id: str | None = None,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+
+        if channel_id:
+            where.append("channel_id = ?")
+            params.append(channel_id)
+
+        decoded = decode_channel_member_cursor(cursor) if cursor else None
+        if decoded:
+            where.append("(channel_id > ? OR (channel_id = ? AND user_id > ?))")
+            params.extend([decoded["channel_id"], decoded["channel_id"], decoded["user_id"]])
+
+        sql = (
+            "SELECT * FROM channel_members"
+            f" WHERE {' AND '.join(where)}"
+            " ORDER BY channel_id ASC, user_id ASC"
+            " LIMIT ?"
+        )
+        params.append(limit + 1)
+        rows = [dict(r) for r in self.conn.execute(sql, params).fetchall()]
+
+        next_cursor = None
+        if len(rows) > limit:
+            last = rows[limit - 1]
+            next_cursor = encode_channel_member_cursor(
+                str(last["channel_id"]), str(last["user_id"])
+            )
             rows = rows[:limit]
         return rows, next_cursor
 
@@ -320,6 +435,15 @@ class SQLiteStore:
     ) -> Iterable[dict[str, object]]:
         yield from self._iter_query(
             "SELECT * FROM channels WHERE workspace_id = ? ORDER BY id ASC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
+    def iter_channel_members(
+        self, workspace_id: str, *, chunk_size: int = 2000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM channel_members WHERE workspace_id = ? ORDER BY channel_id ASC, user_id ASC",
             (workspace_id,),
             chunk_size=chunk_size,
         )
@@ -452,13 +576,23 @@ class SQLiteStore:
     def stats(self, workspace_id: str) -> dict[str, int]:
         cursor = self.conn.cursor()
         counts = {}
-        for table in ("users", "channels", "messages", "files"):
+        for table in ("users", "channels", "channel_members", "messages", "files"):
             res = cursor.execute(
                 f"SELECT COUNT(*) as count FROM {table} WHERE workspace_id = ?",
                 (workspace_id,),
             ).fetchone()
             counts[table] = res["count"] if res else 0
         return counts
+
+    def channel_type_counts(self, workspace_id: str) -> dict[str, int]:
+        cursor = self.conn.execute(
+            (
+                "SELECT channel_type, COUNT(*) as count FROM channels "
+                "WHERE workspace_id = ? GROUP BY channel_type"
+            ),
+            (workspace_id,),
+        )
+        return {str(row["channel_type"]): int(row["count"]) for row in cursor.fetchall()}
 
     def export_summary(self, workspace_id: str) -> dict[str, object]:
         workspace = self.get_workspace(workspace_id)
@@ -468,6 +602,7 @@ class SQLiteStore:
             "workspace": workspace,
             "meta": self.get_workspace_meta(workspace_id),
             "counts": self.stats(workspace_id),
+            "channel_types": self.channel_type_counts(workspace_id),
         }
         return summary
 
@@ -563,3 +698,32 @@ def decode_id_cursor(cursor: str) -> dict[str, object] | None:
     if not isinstance(row_id, str):
         raise ValueError("invalid cursor")
     return {"id": row_id}
+
+
+def encode_channel_member_cursor(channel_id: str, user_id: str) -> str:
+    payload = json.dumps(
+        {"channel_id": channel_id, "user_id": user_id},
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_channel_member_cursor(cursor: str) -> dict[str, object] | None:
+    if not cursor:
+        return None
+    padded = cursor + "=" * (-len(cursor) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise ValueError("invalid cursor") from None
+    if not isinstance(decoded, dict):
+        raise ValueError("invalid cursor")
+    if "channel_id" not in decoded or "user_id" not in decoded:
+        raise ValueError("invalid cursor")
+    channel_id = decoded["channel_id"]
+    user_id = decoded["user_id"]
+    if not isinstance(channel_id, str) or not isinstance(user_id, str):
+        raise ValueError("invalid cursor")
+    return {"channel_id": channel_id, "user_id": user_id}

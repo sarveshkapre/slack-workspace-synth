@@ -40,6 +40,7 @@ class Channel:
     workspace_id: str
     name: str
     is_private: int
+    channel_type: str
     topic: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -48,6 +49,7 @@ class Channel:
             "workspace_id": self.workspace_id,
             "name": self.name,
             "is_private": self.is_private,
+            "channel_type": self.channel_type,
             "topic": self.topic,
         }
 
@@ -103,4 +105,18 @@ class File:
             "channel_id": self.channel_id,
             "message_id": self.message_id,
             "url": self.url,
+        }
+
+
+@dataclass(frozen=True)
+class ChannelMember:
+    channel_id: str
+    workspace_id: str
+    user_id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "channel_id": self.channel_id,
+            "workspace_id": self.workspace_id,
+            "user_id": self.user_id,
         }

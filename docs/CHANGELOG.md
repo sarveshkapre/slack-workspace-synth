@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.1.2
+- Added DM/MPDM channel generation plus a channel member table.
+- Added `channel_type` on channels with optional filtering and type counts in summary exports.
+- Added `channel-members` API endpoint and JSONL import/export support.
+
 ## v0.1.1
 - Added `swsynth export-jsonl` for streaming JSONL exports (optionally gzipped).
 - Added cursor-based pagination for API `users`, `channels`, `messages`, and `files` with `X-Next-Cursor`.

@@ -22,6 +22,8 @@ def _seed_db(tmp_path) -> tuple[str, str]:
         workspace_name="Test",
         users=5,
         channels=3,
+        dm_channels=0,
+        mpdm_channels=0,
         messages=10,
         files=6,
         seed=123,

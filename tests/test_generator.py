@@ -18,6 +18,8 @@ def test_workspace_generation(tmp_path):
         workspace_name="Test",
         users=5,
         channels=3,
+        dm_channels=0,
+        mpdm_channels=0,
         messages=0,
         files=0,
         seed=123,

@@ -64,5 +64,6 @@ def test_import_jsonl_roundtrip(tmp_path):
 
     assert summary["counts"]["users"] == 3
     assert summary["counts"]["channels"] == 2
+    assert 4 <= summary["counts"]["channel_members"] <= 6
     assert summary["counts"]["messages"] == 5
     assert summary["counts"]["files"] == 4

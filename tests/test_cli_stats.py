@@ -25,6 +25,8 @@ def _seed_db(tmp_path) -> tuple[str, str]:
         workspace_name="Test",
         users=5,
         channels=3,
+        dm_channels=0,
+        mpdm_channels=0,
         messages=10,
         files=6,
         seed=123,
@@ -76,5 +78,6 @@ def test_stats_writes_json(tmp_path):
     assert payload["workspace"]["id"] == workspace_id
     assert payload["counts"]["users"] == 5
     assert payload["counts"]["channels"] == 3
+    assert payload["counts"]["channel_members"] == 0
     assert payload["counts"]["messages"] == 10
     assert payload["counts"]["files"] == 6

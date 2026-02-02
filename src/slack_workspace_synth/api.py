@@ -86,6 +86,7 @@ def list_channels(
     db: str | None = Query(None, description="Path to SQLite DB"),
     limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0),
+    channel_type: str | None = Query(None, description="Filter by channel type"),
     cursor: str | None = Query(
         None, description="Keyset cursor (preferred over offset for large tables)"
     ),
@@ -97,14 +98,47 @@ def list_channels(
         if cursor is not None:
             try:
                 rows, next_cursor = store.list_channels_page(
-                    workspace_id, limit=limit, cursor=cursor
+                    workspace_id, limit=limit, cursor=cursor, channel_type=channel_type
                 )
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from None
             if next_cursor:
                 response.headers["X-Next-Cursor"] = next_cursor
             return rows
-        return store.list_channels(workspace_id, limit, offset)
+        return store.list_channels(workspace_id, limit, offset, channel_type=channel_type)
+    finally:
+        store.close()
+
+
+@app.get("/workspaces/{workspace_id}/channel-members")
+def list_channel_members(
+    workspace_id: str,
+    response: Response,
+    db: str | None = Query(None, description="Path to SQLite DB"),
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    channel_id: str | None = Query(None, description="Filter by channel id"),
+    cursor: str | None = Query(
+        None, description="Keyset cursor (preferred over offset for large tables)"
+    ),
+) -> list[dict[str, object]]:
+    store = _store(db)
+    try:
+        if cursor is not None and offset != 0:
+            raise HTTPException(status_code=400, detail="Use cursor or offset, not both")
+        if cursor is not None:
+            try:
+                rows, next_cursor = store.list_channel_members_page(
+                    workspace_id, limit=limit, cursor=cursor, channel_id=channel_id
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from None
+            if next_cursor:
+                response.headers["X-Next-Cursor"] = next_cursor
+            return rows
+        return store.list_channel_members(
+            workspace_id, limit, offset, channel_id=channel_id
+        )
     finally:
         store.close()
 
