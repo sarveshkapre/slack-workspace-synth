@@ -9,7 +9,7 @@ from typing import cast
 
 from faker import Faker
 
-from .models import Channel, File, Message, User, Workspace
+from .models import Channel, ChannelMember, File, Message, User, Workspace
 from .plugins import PluginRegistry
 
 
@@ -18,10 +18,16 @@ class GenerationConfig:
     workspace_name: str
     users: int
     channels: int
+    dm_channels: int
+    mpdm_channels: int
     messages: int
     files: int
     seed: int
     batch_size: int = 500
+    channel_members_min: int = 8
+    channel_members_max: int = 120
+    mpdm_members_min: int = 3
+    mpdm_members_max: int = 7
 
 
 def _uuid() -> str:
@@ -91,11 +97,13 @@ def generate_channels(
     for idx in range(config.channels):
         base = faker.word().replace("_", "-")
         name = f"{base}-{idx}" if idx > 0 else base
+        is_private = 1 if rng.random() < 0.15 else 0
         payload = {
             "id": _uuid(),
             "workspace_id": workspace_id,
             "name": name,
-            "is_private": 1 if rng.random() < 0.15 else 0,
+            "is_private": is_private,
+            "channel_type": "private" if is_private else "public",
             "topic": faker.sentence(nb_words=6),
         }
         payload = plugins.on_channel(payload)
@@ -105,10 +113,98 @@ def generate_channels(
                 workspace_id=cast(str, payload["workspace_id"]),
                 name=cast(str, payload["name"]),
                 is_private=cast(int, payload["is_private"]),
+                channel_type=cast(str, payload["channel_type"]),
+                topic=cast(str, payload["topic"]),
+            )
+        )
+    for idx in range(config.dm_channels):
+        payload = {
+            "id": _uuid(),
+            "workspace_id": workspace_id,
+            "name": f"dm-{idx + 1:04d}",
+            "is_private": 1,
+            "channel_type": "im",
+            "topic": "Direct message",
+        }
+        payload = plugins.on_channel(payload)
+        channels.append(
+            Channel(
+                id=cast(str, payload["id"]),
+                workspace_id=cast(str, payload["workspace_id"]),
+                name=cast(str, payload["name"]),
+                is_private=cast(int, payload["is_private"]),
+                channel_type=cast(str, payload["channel_type"]),
+                topic=cast(str, payload["topic"]),
+            )
+        )
+    for idx in range(config.mpdm_channels):
+        payload = {
+            "id": _uuid(),
+            "workspace_id": workspace_id,
+            "name": f"mpdm-{idx + 1:04d}",
+            "is_private": 1,
+            "channel_type": "mpim",
+            "topic": "Multi-party direct message",
+        }
+        payload = plugins.on_channel(payload)
+        channels.append(
+            Channel(
+                id=cast(str, payload["id"]),
+                workspace_id=cast(str, payload["workspace_id"]),
+                name=cast(str, payload["name"]),
+                is_private=cast(int, payload["is_private"]),
+                channel_type=cast(str, payload["channel_type"]),
                 topic=cast(str, payload["topic"]),
             )
         )
     return channels
+
+
+def generate_channel_members(
+    config: GenerationConfig,
+    workspace_id: str,
+    users: list[User],
+    channels: list[Channel],
+    rng: random.Random,
+) -> list[ChannelMember]:
+    user_ids = [user.id for user in users]
+    members: list[ChannelMember] = []
+    if not user_ids:
+        return members
+
+    def _add_members(channel_id: str, member_ids: list[str]) -> None:
+        for user_id in member_ids:
+            members.append(
+                ChannelMember(
+                    channel_id=channel_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
+            )
+
+    max_channel_members = max(1, min(config.channel_members_max, len(user_ids)))
+    min_channel_members = max(1, min(config.channel_members_min, max_channel_members))
+    for channel in channels:
+        if channel.channel_type == "im":
+            member_ids = rng.sample(user_ids, k=2) if len(user_ids) >= 2 else user_ids
+            _add_members(channel.id, member_ids)
+            continue
+        if channel.channel_type == "mpim":
+            max_mpdm = min(config.mpdm_members_max, len(user_ids))
+            if max_mpdm < 3:
+                _add_members(channel.id, user_ids)
+                continue
+            min_mpdm = max(3, min(config.mpdm_members_min, max_mpdm))
+            member_count = rng.randint(min_mpdm, max_mpdm)
+            _add_members(channel.id, rng.sample(user_ids, k=member_count))
+            continue
+
+        if max_channel_members == 0:
+            continue
+        member_count = rng.randint(min_channel_members, max_channel_members)
+        _add_members(channel.id, rng.sample(user_ids, k=member_count))
+
+    return members
 
 
 def generate_messages(

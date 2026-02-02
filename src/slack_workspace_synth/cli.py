@@ -10,13 +10,14 @@ from faker import Faker
 
 from .generator import (
     GenerationConfig,
+    generate_channel_members,
     generate_channels,
     generate_files,
     generate_messages,
     generate_users,
     generate_workspace,
 )
-from .models import Channel, File, Message, User, Workspace
+from .models import Channel, ChannelMember, File, Message, User, Workspace
 from .plugins import PluginRegistry, load_plugins
 from .storage import SQLiteStore, dump_json, dump_jsonl, load_jsonl
 
@@ -34,25 +35,101 @@ def _resolve_plugins(modules: list[str] | None) -> PluginRegistry:
 @app.command()
 def generate(
     workspace: str = typer.Option("Synth Workspace", help="Workspace name"),
-    users: int = typer.Option(2000, help="Number of users"),
-    channels: int = typer.Option(80, help="Number of channels"),
-    messages: int = typer.Option(120000, help="Number of messages"),
-    files: int = typer.Option(5000, help="Number of files"),
+    users: int | None = typer.Option(None, help="Number of users"),
+    channels: int | None = typer.Option(None, help="Number of channels"),
+    dm_channels: int | None = typer.Option(None, help="Number of direct-message channels"),
+    mpdm_channels: int | None = typer.Option(None, help="Number of multi-party DMs"),
+    messages: int | None = typer.Option(None, help="Number of messages"),
+    files: int | None = typer.Option(None, help="Number of files"),
     seed: int = typer.Option(42, help="Random seed"),
     db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
     batch_size: int = typer.Option(500, help="Insert batch size"),
+    channel_members_min: int | None = typer.Option(
+        None, help="Minimum members per channel"
+    ),
+    channel_members_max: int | None = typer.Option(
+        None, help="Maximum members per channel"
+    ),
+    mpdm_members_min: int | None = typer.Option(
+        None, help="Minimum members per MPDM"
+    ),
+    mpdm_members_max: int | None = typer.Option(
+        None, help="Maximum members per MPDM"
+    ),
     plugin: list[str] | None = typer.Option(None, help="Plugin module path"),
     export_summary: str | None = typer.Option(None, help="Write summary JSON path"),
+    profile: str = typer.Option(
+        "default", help="Generation profile: default or enterprise"
+    ),
 ) -> None:
     """Generate a synthetic workspace into SQLite."""
+    profiles = {
+        "default": {
+            "users": 2000,
+            "channels": 80,
+            "dm_channels": 0,
+            "mpdm_channels": 0,
+            "messages": 120000,
+            "files": 5000,
+            "channel_members_min": 8,
+            "channel_members_max": 120,
+            "mpdm_members_min": 3,
+            "mpdm_members_max": 7,
+        },
+        "enterprise": {
+            "users": 2500,
+            "channels": 120,
+            "dm_channels": 1800,
+            "mpdm_channels": 320,
+            "messages": 180000,
+            "files": 9000,
+            "channel_members_min": 25,
+            "channel_members_max": 350,
+            "mpdm_members_min": 3,
+            "mpdm_members_max": 9,
+        },
+    }
+    if profile not in profiles:
+        raise typer.BadParameter(f"Unknown profile: {profile}")
+    defaults = profiles[profile]
+    resolved_users = users if users is not None else defaults["users"]
+    resolved_channels = channels if channels is not None else defaults["channels"]
+    resolved_dm_channels = dm_channels if dm_channels is not None else defaults["dm_channels"]
+    resolved_mpdm_channels = (
+        mpdm_channels if mpdm_channels is not None else defaults["mpdm_channels"]
+    )
+    resolved_messages = messages if messages is not None else defaults["messages"]
+    resolved_files = files if files is not None else defaults["files"]
+    resolved_channel_members_min = (
+        channel_members_min
+        if channel_members_min is not None
+        else defaults["channel_members_min"]
+    )
+    resolved_channel_members_max = (
+        channel_members_max
+        if channel_members_max is not None
+        else defaults["channel_members_max"]
+    )
+    resolved_mpdm_members_min = (
+        mpdm_members_min if mpdm_members_min is not None else defaults["mpdm_members_min"]
+    )
+    resolved_mpdm_members_max = (
+        mpdm_members_max if mpdm_members_max is not None else defaults["mpdm_members_max"]
+    )
     config = GenerationConfig(
         workspace_name=workspace,
-        users=users,
-        channels=channels,
-        messages=messages,
-        files=files,
+        users=resolved_users,
+        channels=resolved_channels,
+        dm_channels=resolved_dm_channels,
+        mpdm_channels=resolved_mpdm_channels,
+        messages=resolved_messages,
+        files=resolved_files,
         seed=seed,
         batch_size=batch_size,
+        channel_members_min=resolved_channel_members_min,
+        channel_members_max=resolved_channel_members_max,
+        mpdm_members_min=resolved_mpdm_members_min,
+        mpdm_members_max=resolved_mpdm_members_max,
     )
     rng = __import__("random").Random(seed)
     faker = Faker()
@@ -70,12 +147,19 @@ def generate(
                 "generator_version": _PKG_VERSION,
                 "seed": seed,
                 "requested": {
-                    "users": users,
-                    "channels": channels,
-                    "messages": messages,
-                    "files": files,
+                    "users": resolved_users,
+                    "channels": resolved_channels,
+                    "dm_channels": resolved_dm_channels,
+                    "mpdm_channels": resolved_mpdm_channels,
+                    "messages": resolved_messages,
+                    "files": resolved_files,
                     "batch_size": batch_size,
                     "workspace_name": workspace,
+                    "profile": profile,
+                    "channel_members_min": resolved_channel_members_min,
+                    "channel_members_max": resolved_channel_members_max,
+                    "mpdm_members_min": resolved_mpdm_members_min,
+                    "mpdm_members_max": resolved_mpdm_members_max,
                     "plugins": plugin or [],
                 },
             },
@@ -89,6 +173,11 @@ def generate(
 
         user_ids = [u.id for u in user_list]
         channel_ids = [c.id for c in channel_list]
+
+        channel_members = generate_channel_members(
+            config, workspace_obj.id, user_list, channel_list, rng
+        )
+        store.insert_channel_members(channel_members)
 
         message_buffer = []
         for message in generate_messages(
@@ -224,6 +313,7 @@ def import_jsonl(
                         workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
                         name=_get_str(data, "name"),
                         is_private=_get_int(data, "is_private"),
+                        channel_type=_get_str(data, "channel_type", "public"),
                         topic=_get_str(data, "topic"),
                     )
                 )
@@ -232,6 +322,25 @@ def import_jsonl(
                     buffer = []
             if buffer:
                 store.insert_channels(buffer)
+
+        def _import_channel_members(path: Path) -> None:
+            if not path.exists():
+                return
+            buffer: list[ChannelMember] = []
+            for row in load_jsonl(str(path)):
+                data = row if isinstance(row, dict) else {}
+                buffer.append(
+                    ChannelMember(
+                        channel_id=_get_str(data, "channel_id"),
+                        workspace_id=_get_str(data, "workspace_id", workspace_obj.id),
+                        user_id=_get_str(data, "user_id"),
+                    )
+                )
+                if len(buffer) >= batch_size:
+                    store.insert_channel_members(buffer)
+                    buffer = []
+            if buffer:
+                store.insert_channel_members(buffer)
 
         def _import_messages(path: Path) -> None:
             buffer: list[Message] = []
@@ -288,6 +397,7 @@ def import_jsonl(
 
         _import_users(_pick(export_dir, "users"))
         _import_channels(_pick(export_dir, "channels"))
+        _import_channel_members(_pick(export_dir, "channel_members"))
         _import_messages(_pick(export_dir, "messages"))
         _import_files(_pick(export_dir, "files"))
 
@@ -356,6 +466,11 @@ def export_jsonl(
             compress=compress,
         )
         dump_jsonl(
+            str(out_dir / f"channel_members{suffix}"),
+            store.iter_channel_members(resolved_workspace_id, chunk_size=chunk_size),
+            compress=compress,
+        )
+        dump_jsonl(
             str(out_dir / f"messages{suffix}"),
             store.iter_messages(resolved_workspace_id, chunk_size=chunk_size),
             compress=compress,
@@ -404,8 +519,13 @@ def stats(
         if created_at_iso:
             typer.echo(f"Created:  {created_at_iso}")
         typer.echo("Counts:")
-        for key in ("users", "channels", "messages", "files"):
+        for key in ("users", "channels", "channel_members", "messages", "files"):
             typer.echo(f"- {key}: {counts.get(key)}")
+        channel_types = summary.get("channel_types")
+        if isinstance(channel_types, dict) and channel_types:
+            typer.echo("Channel types:")
+            for key, value in channel_types.items():
+                typer.echo(f"- {key}: {value}")
         if json_out:
             typer.echo(f"Wrote summary JSON to: {json_out}")
     finally:
