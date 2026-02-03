@@ -5,6 +5,7 @@
   per-user OAuth (for true user-authored messages), and optional bulk history import.
 - Updated `make build` to attempt `python -m build --no-isolation`, but skip if `setuptools` is missing
   (common in sandboxed/offline environments).
+- Added `swsynth oauth-pack` to generate per-user Slack OAuth URLs for clickops token collection.
 
 ## v0.1.2
 - Added DM/MPDM channel generation plus a channel member table.

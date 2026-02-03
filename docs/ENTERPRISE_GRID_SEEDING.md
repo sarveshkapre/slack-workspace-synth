@@ -118,9 +118,10 @@ Keep it explicit and composable:
    - Creates a new Grid workspace and channels, assigns provisioned users.
 4. `swsynth seed import`:
    - Builds a Slack import bundle from the SQLite DB / blueprint output.
-5. `swsynth seed live`:
-   - Runs OAuth clickops to collect user tokens.
-   - Posts messages as users, respecting rate limits and idempotency.
+5. `swsynth oauth-pack` (available now):
+   - Generates per-user OAuth URLs + `state_map.json` for clickops token collection.
+6. `swsynth seed live`:
+   - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
 
 ## Operational notes
 
@@ -129,4 +130,3 @@ Keep it explicit and composable:
 - **Idempotency**: persist a stable mapping file `{synthetic_user_id -> entra_object_id -> slack_user_id}`
   plus `{synthetic_channel_id -> slack_channel_id}` so reruns do not duplicate entities.
 - **Rate limiting**: posting 100k messages live will be slow. Prefer bulk import for large day-0 histories.
-

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import csv
 import json
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import typer
 from faker import Faker
@@ -30,6 +33,10 @@ def _resolve_plugins(modules: list[str] | None) -> PluginRegistry:
     if not modules:
         return PluginRegistry()
     return load_plugins(modules)
+
+
+def _normalize_scopes(scope: str) -> str:
+    return ",".join(part.strip() for part in scope.split(",") if part.strip())
 
 
 @app.command()
@@ -468,6 +475,122 @@ def export_jsonl(
         )
 
         typer.echo(f"Wrote export to: {out_dir}")
+    finally:
+        store.close()
+
+
+@app.command("oauth-pack")
+def oauth_pack(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    out: str = typer.Option("./oauth", help="Output directory"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    client_id: str = typer.Option(..., help="Slack app client ID"),
+    redirect_uri: str = typer.Option("http://localhost:8080/callback", help="OAuth redirect URI"),
+    scope: str = typer.Option("chat:write", help="Bot scopes (comma-separated)"),
+    user_scope: str = typer.Option(
+        "chat:write,channels:read,groups:read,im:read,mpim:read",
+        help="User scopes (comma-separated)",
+    ),
+    limit: int | None = typer.Option(None, help="Limit number of users"),
+    include_bots: bool = typer.Option(False, help="Include bot users from the DB"),
+    state_seed: str | None = typer.Option(
+        None, help="Optional seed to make OAuth state values deterministic"
+    ),
+) -> None:
+    """Generate per-user OAuth URLs for clickops token collection."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        workspace = store.get_workspace(resolved_workspace_id)
+        if not workspace:
+            raise typer.BadParameter(f"Workspace not found: {resolved_workspace_id}")
+
+        out_dir = Path(out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        normalized_scope = _normalize_scopes(scope)
+        normalized_user_scope = _normalize_scopes(user_scope)
+        if not normalized_scope and not normalized_user_scope:
+            raise typer.BadParameter("At least one of --scope or --user-scope must be set.")
+
+        def _state_for(user_id: str, email: str) -> str:
+            if state_seed is None:
+                return uuid.uuid4().hex
+            return uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"{state_seed}:{resolved_workspace_id}:{user_id}:{email}",
+            ).hex
+
+        def _oauth_url(state: str) -> str:
+            params: dict[str, str] = {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": state,
+            }
+            if normalized_scope:
+                params["scope"] = normalized_scope
+            if normalized_user_scope:
+                params["user_scope"] = normalized_user_scope
+            return f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
+
+        rows: list[dict[str, str]] = []
+        state_map: dict[str, object] = {}
+        for row in store.iter_users(resolved_workspace_id, chunk_size=1000):
+            if not include_bots and row["is_bot"]:
+                continue
+            state = _state_for(str(row["id"]), str(row["email"]))
+            oauth_url = _oauth_url(state)
+            rows.append(
+                {
+                    "user_id": str(row["id"]),
+                    "email": str(row["email"]),
+                    "name": str(row["name"]),
+                    "state": state,
+                    "oauth_url": oauth_url,
+                }
+            )
+            state_map[state] = {
+                "user_id": str(row["id"]),
+                "email": str(row["email"]),
+                "name": str(row["name"]),
+            }
+            if limit is not None and len(rows) >= limit:
+                break
+
+        if not rows:
+            raise typer.BadParameter("No users available to build OAuth pack.")
+
+        csv_path = out_dir / "oauth_urls.csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["user_id", "email", "name", "state", "oauth_url"],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+        dump_json(str(out_dir / "state_map.json"), state_map)
+        dump_json(
+            str(out_dir / "summary.json"),
+            {
+                "workspace_id": resolved_workspace_id,
+                "workspace_name": str(workspace["name"]),
+                "user_count": len(rows),
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": normalized_scope,
+                "user_scope": normalized_user_scope,
+                "include_bots": include_bots,
+                "limit": limit,
+            },
+        )
+
+        typer.echo(f"Wrote OAuth pack to: {out_dir}")
     finally:
         store.close()
 
