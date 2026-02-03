@@ -64,7 +64,8 @@ def _load_json(path: str) -> dict[str, Any]:
 def _slack_post_json(token: str, url: str, payload: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, method="POST")
-    request.add_header("Authorization", f"Bearer {token}")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
     request.add_header("Content-Type", "application/json; charset=utf-8")
     with urlopen(request, timeout=30) as response:
         data = response.read().decode("utf-8")
@@ -105,6 +106,42 @@ def _load_token_map(path: str) -> dict[str, dict[str, str]]:
                 "access_token": token,
             }
     return entries
+
+
+def _load_existing_tokens(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    payload = _load_json(str(path))
+    entries: dict[str, dict[str, Any]] = {}
+
+    if isinstance(payload.get("users"), list):
+        for item in payload["users"]:
+            if not isinstance(item, dict):
+                continue
+            synthetic_id = str(
+                item.get("synthetic_user_id") or item.get("user_id") or item.get("id") or ""
+            )
+            if not synthetic_id:
+                continue
+            entries[synthetic_id] = dict(item)
+        return entries
+
+    for key, value in payload.items():
+        if not isinstance(value, dict):
+            continue
+        if "access_token" not in value and "token" not in value:
+            continue
+        entries[str(key)] = dict(value)
+        entries[str(key)].setdefault("synthetic_user_id", str(key))
+
+    return entries
+
+
+def _write_tokens_file(path: Path, tokens: dict[str, dict[str, Any]], meta: dict[str, Any]) -> None:
+    users_list = [dict(entry) for entry in tokens.values()]
+    users_list.sort(key=lambda item: str(item.get("synthetic_user_id", "")))
+    payload = {"meta": meta, "users": users_list}
+    dump_json(str(path), payload)
 
 
 @app.command()
@@ -1044,6 +1081,181 @@ def seed_live(
         )
     finally:
         store.close()
+
+
+@app.command("oauth-callback")
+def oauth_callback(
+    state_map: str = typer.Option(..., help="State map JSON from oauth-pack"),
+    out: str = typer.Option("./tokens.json", help="Output tokens JSON"),
+    client_id: str = typer.Option(..., help="Slack app client ID"),
+    client_secret: str = typer.Option(..., help="Slack app client secret"),
+    redirect_uri: str = typer.Option("http://localhost:8080/callback", help="OAuth redirect URI"),
+    host: str = typer.Option("127.0.0.1", help="Callback server host"),
+    port: int = typer.Option(8080, help="Callback server port"),
+    timeout: int | None = typer.Option(
+        None, help="Stop server after N seconds (None waits indefinitely)"
+    ),
+    max_users: int | None = typer.Option(
+        None, help="Stop after capturing N users (default: all in state map)"
+    ),
+    append: bool = typer.Option(True, help="Append to existing tokens file"),
+    base_url: str = typer.Option("https://slack.com/api", help="Slack API base URL"),
+) -> None:
+    """Run a local OAuth callback server and exchange codes for user tokens."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    state_map_payload = _load_json(state_map)
+    if not state_map_payload:
+        raise typer.BadParameter("State map is empty.")
+
+    expected = (
+        max_users
+        if max_users is not None
+        else len(state_map_payload)
+        if isinstance(state_map_payload, dict)
+        else 0
+    )
+    if expected <= 0:
+        raise typer.BadParameter("No users in state map.")
+
+    tokens_path = Path(out)
+    tokens = _load_existing_tokens(tokens_path) if append else {}
+
+    lock = threading.Lock()
+    stop_event = threading.Event()
+    stats = {"captured": 0, "errors": 0}
+
+    def _write_snapshot() -> None:
+        meta = {
+            "captured": len(tokens),
+            "updated_at": datetime.now(tz=UTC).isoformat(),
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+        }
+        _write_tokens_file(tokens_path, tokens, meta)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+        def _send(self, status: int, body: str) -> None:
+            payload = body.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path not in ("/", "/callback"):
+                self._send(404, "<h3>Not Found</h3>")
+                return
+            if parsed.path == "/" and not parsed.query:
+                self._send(200, "<h3>OAuth callback server running.</h3>")
+                return
+
+            params = parse_qs(parsed.query)
+            if "error" in params:
+                self._send(400, f"<h3>OAuth error: {params['error'][0]}</h3>")
+                return
+
+            code = params.get("code", [None])[0]
+            state = params.get("state", [None])[0]
+            if not code or not state:
+                self._send(400, "<h3>Missing code or state</h3>")
+                return
+
+            state_entry = state_map_payload.get(state)
+            if not isinstance(state_entry, dict):
+                self._send(400, "<h3>Unknown state</h3>")
+                return
+
+            synthetic_user_id = str(
+                state_entry.get("user_id")
+                or state_entry.get("synthetic_user_id")
+                or state_entry.get("id")
+                or ""
+            )
+            if not synthetic_user_id:
+                self._send(400, "<h3>State missing user_id</h3>")
+                return
+
+            with lock:
+                if synthetic_user_id in tokens:
+                    self._send(200, "<h3>Token already captured.</h3>")
+                    return
+
+            payload = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+            }
+            response = _slack_post_json(
+                token="", url=f"{base_url}/oauth.v2.access", payload=payload
+            )
+            if not response.get("ok"):
+                self._send(400, f"<h3>Slack error: {response.get('error')}</h3>")
+                with lock:
+                    stats["errors"] += 1
+                return
+
+            authed_raw = response.get("authed_user")
+            authed_user: dict[str, Any] = authed_raw if isinstance(authed_raw, dict) else {}
+            access_token = str(
+                authed_user.get("access_token") or response.get("access_token") or ""
+            )
+            if not access_token:
+                self._send(400, "<h3>No user access token returned.</h3>")
+                with lock:
+                    stats["errors"] += 1
+                return
+
+            slack_user_id = str(authed_user.get("id") or response.get("user_id") or "")
+            entry = {
+                "synthetic_user_id": synthetic_user_id,
+                "slack_user_id": slack_user_id,
+                "access_token": access_token,
+                "refresh_token": authed_user.get("refresh_token"),
+                "expires_in": authed_user.get("expires_in"),
+                "scope": authed_user.get("scope") or response.get("scope"),
+                "token_type": "user",
+                "captured_at": datetime.now(tz=UTC).isoformat(),
+            }
+
+            with lock:
+                tokens[synthetic_user_id] = entry
+                stats["captured"] = len(tokens)
+                _write_snapshot()
+
+                if stats["captured"] >= expected:
+                    stop_event.set()
+
+            self._send(200, "<h3>Token captured. You can close this tab.</h3>")
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.timeout = 1.0
+
+    typer.echo(
+        f"OAuth callback server listening on http://{host}:{port}/callback (expected={expected})"
+    )
+
+    start = time.time()
+    try:
+        while not stop_event.is_set():
+            server.handle_request()
+            if timeout is not None and (time.time() - start) >= timeout:
+                break
+    finally:
+        server.server_close()
+
+    if tokens:
+        _write_snapshot()
+
+    typer.echo(f"Captured {len(tokens)} user tokens. Output: {tokens_path}")
 
 
 @app.command()

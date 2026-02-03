@@ -48,6 +48,12 @@ Generate per-user OAuth URLs for clickops collection:
 swsynth oauth-pack --db ./data/acme.db --client-id YOUR_CLIENT_ID --out ./oauth
 ```
 
+Run a local OAuth callback to capture user tokens:
+```bash
+. .venv/bin/activate
+swsynth oauth-callback --state-map ./oauth/state_map.json --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --out ./tokens.json
+```
+
 Post messages live using per-user tokens (dry-run by default):
 ```bash
 . .venv/bin/activate

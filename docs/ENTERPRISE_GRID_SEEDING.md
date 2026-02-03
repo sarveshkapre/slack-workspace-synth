@@ -122,7 +122,9 @@ Keep it explicit and composable:
    - Builds a Slack export-style import bundle from the SQLite DB output.
 5. `swsynth oauth-pack` (available now):
    - Generates per-user OAuth URLs + `state_map.json` for clickops token collection.
-6. `swsynth seed-live` (available now):
+6. `swsynth oauth-callback` (available now):
+   - Runs a local callback server to exchange OAuth codes for user tokens.
+7. `swsynth seed-live` (available now):
    - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
 
 ## Operational notes
