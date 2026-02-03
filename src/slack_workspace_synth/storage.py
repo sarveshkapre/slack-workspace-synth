@@ -468,6 +468,24 @@ class SQLiteStore:
             chunk_size=chunk_size,
         )
 
+    def iter_messages_chronological(
+        self, workspace_id: str, *, chunk_size: int = 1000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM messages WHERE workspace_id = ? ORDER BY ts ASC, id ASC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
+    def iter_messages_for_import(
+        self, workspace_id: str, *, chunk_size: int = 2000
+    ) -> Iterable[dict[str, object]]:
+        yield from self._iter_query(
+            "SELECT * FROM messages WHERE workspace_id = ? ORDER BY channel_id ASC, ts ASC, id ASC",
+            (workspace_id,),
+            chunk_size=chunk_size,
+        )
+
     def iter_files(
         self, workspace_id: str, *, chunk_size: int = 1000
     ) -> Iterable[dict[str, object]]:
@@ -618,7 +636,7 @@ class SQLiteStore:
         return summary
 
 
-def dump_json(path: str, payload: dict[str, object]) -> None:
+def dump_json(path: str, payload: object) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)

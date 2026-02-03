@@ -36,6 +36,24 @@ swsynth export-jsonl --db ./data/acme.db --out ./export --compress
 ```
 The export includes `channel_members.jsonl(.gz)` alongside users, channels, messages, and files.
 
+Generate a Slack import bundle (export-style):
+```bash
+. .venv/bin/activate
+swsynth seed-import --db ./data/acme.db --out ./import_bundle
+```
+
+Generate per-user OAuth URLs for clickops collection:
+```bash
+. .venv/bin/activate
+swsynth oauth-pack --db ./data/acme.db --client-id YOUR_CLIENT_ID --out ./oauth
+```
+
+Post messages live using per-user tokens (dry-run by default):
+```bash
+. .venv/bin/activate
+swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --channel-map ./channel_map.json --report ./seed_report.json
+```
+
 Import from JSONL:
 ```bash
 . .venv/bin/activate

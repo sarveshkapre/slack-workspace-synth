@@ -116,11 +116,11 @@ Keep it explicit and composable:
    - Creates Entra users for the blueprint and assigns them so SCIM provisions them to Slack.
 3. `swsynth provision slack`:
    - Creates a new Grid workspace and channels, assigns provisioned users.
-4. `swsynth seed import`:
-   - Builds a Slack import bundle from the SQLite DB / blueprint output.
+4. `swsynth seed-import` (available now):
+   - Builds a Slack export-style import bundle from the SQLite DB output.
 5. `swsynth oauth-pack` (available now):
    - Generates per-user OAuth URLs + `state_map.json` for clickops token collection.
-6. `swsynth seed live`:
+6. `swsynth seed-live` (available now):
    - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
 
 ## Operational notes

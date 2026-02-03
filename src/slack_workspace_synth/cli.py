@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from urllib.error import HTTPError
 from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import typer
 from faker import Faker
@@ -37,6 +41,70 @@ def _resolve_plugins(modules: list[str] | None) -> PluginRegistry:
 
 def _normalize_scopes(scope: str) -> str:
     return ",".join(part.strip() for part in scope.split(",") if part.strip())
+
+
+def _make_import_id(prefix: str, value: str) -> str:
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:9].upper()
+    return f"{prefix}{digest}"
+
+
+def _sanitize_folder_name(name: str) -> str:
+    clean = "".join(ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in name.strip())
+    return clean.strip("-") or "conversation"
+
+
+def _load_json(path: str) -> dict[str, Any]:
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise typer.BadParameter(f"Expected object JSON: {path}")
+    return payload
+
+
+def _slack_post_json(token: str, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(url, data=body, method="POST")
+    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("Content-Type", "application/json; charset=utf-8")
+    with urlopen(request, timeout=30) as response:
+        data = response.read().decode("utf-8")
+    parsed = json.loads(data)
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Unexpected Slack response: {data[:200]}")
+    return parsed
+
+
+def _load_token_map(path: str) -> dict[str, dict[str, str]]:
+    payload = _load_json(path)
+    entries: dict[str, dict[str, str]] = {}
+
+    if "users" in payload and isinstance(payload["users"], list):
+        for item in payload["users"]:
+            if not isinstance(item, dict):
+                continue
+            synthetic_id = str(
+                item.get("synthetic_user_id") or item.get("user_id") or item.get("id") or ""
+            )
+            slack_user_id = str(item.get("slack_user_id") or item.get("slack_id") or "")
+            token = str(item.get("access_token") or item.get("token") or "")
+            if synthetic_id and slack_user_id and token:
+                entries[synthetic_id] = {
+                    "slack_user_id": slack_user_id,
+                    "access_token": token,
+                }
+        return entries
+
+    for key, value in payload.items():
+        if not isinstance(value, dict):
+            continue
+        slack_user_id = str(value.get("slack_user_id") or value.get("slack_id") or "")
+        token = str(value.get("access_token") or value.get("token") or "")
+        if key and slack_user_id and token:
+            entries[str(key)] = {
+                "slack_user_id": slack_user_id,
+                "access_token": token,
+            }
+    return entries
 
 
 @app.command()
@@ -479,6 +547,224 @@ def export_jsonl(
         store.close()
 
 
+@app.command("seed-import")
+def seed_import(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    out: str = typer.Option("./import_bundle", help="Output directory"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    include_private: bool = typer.Option(True, help="Include private channels"),
+    include_dms: bool = typer.Option(True, help="Include 1:1 DMs"),
+    include_mpims: bool = typer.Option(True, help="Include multi-party DMs"),
+    include_bots: bool = typer.Option(False, help="Include bot users"),
+    limit_messages: int | None = typer.Option(None, help="Limit number of messages"),
+) -> None:
+    """Generate a Slack export-style import bundle from the SQLite DB."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        workspace = store.get_workspace(resolved_workspace_id)
+        if not workspace:
+            raise typer.BadParameter(f"Workspace not found: {resolved_workspace_id}")
+
+        out_dir = Path(out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        users = []
+        user_id_map: dict[str, str] = {}
+        for row in store.iter_users(resolved_workspace_id, chunk_size=1000):
+            if not include_bots and row["is_bot"]:
+                continue
+            synthetic_id = str(row["id"])
+            import_id = _make_import_id("U", synthetic_id)
+            user_id_map[synthetic_id] = import_id
+            users.append(
+                {
+                    "id": import_id,
+                    "name": str(row["name"]).lower().replace(" ", "."),
+                    "real_name": str(row["name"]),
+                    "profile": {
+                        "real_name": str(row["name"]),
+                        "display_name": str(row["name"]),
+                        "email": str(row["email"]),
+                        "title": str(row["title"]),
+                    },
+                    "is_bot": bool(row["is_bot"]),
+                    "deleted": False,
+                }
+            )
+
+        if not users:
+            raise typer.BadParameter("No users available for import bundle.")
+
+        channel_rows = list(store.iter_channels(resolved_workspace_id, chunk_size=1000))
+        channel_members: dict[str, list[str]] = {}
+        for member in store.iter_channel_members(resolved_workspace_id, chunk_size=2000):
+            channel_members.setdefault(str(member["channel_id"]), []).append(
+                user_id_map.get(str(member["user_id"]), str(member["user_id"]))
+            )
+
+        channel_id_map: dict[str, str] = {}
+        channel_folder_map: dict[str, str] = {}
+        channels_payload: list[dict[str, Any]] = []
+        groups_payload: list[dict[str, Any]] = []
+        dms_payload: list[dict[str, Any]] = []
+        mpims_payload: list[dict[str, Any]] = []
+
+        for channel in channel_rows:
+            channel_type = str(channel["channel_type"])
+            if channel_type == "private" and not include_private:
+                continue
+            if channel_type == "im" and not include_dms:
+                continue
+            if channel_type == "mpim" and not include_mpims:
+                continue
+
+            synthetic_id = str(channel["id"])
+            if channel_type == "public":
+                import_id = _make_import_id("C", synthetic_id)
+            elif channel_type == "private":
+                import_id = _make_import_id("G", synthetic_id)
+            elif channel_type == "im":
+                import_id = _make_import_id("D", synthetic_id)
+            else:
+                import_id = _make_import_id("G", synthetic_id)
+
+            channel_id_map[synthetic_id] = import_id
+            name = str(channel["name"])
+            folder_name = _sanitize_folder_name(
+                name if channel_type in ("public", "private") else import_id
+            )
+            channel_folder_map[synthetic_id] = folder_name
+
+            members = channel_members.get(synthetic_id, [])
+            creator = members[0] if members else next(iter(user_id_map.values()))
+            created_at = int(cast(int, workspace["created_at"]))
+            topic_value = str(channel["topic"])
+            payload = {
+                "id": import_id,
+                "name": name,
+                "created": created_at,
+                "creator": creator,
+                "members": members,
+                "topic": {"value": topic_value, "creator": creator, "last_set": created_at},
+                "purpose": {"value": topic_value, "creator": creator, "last_set": created_at},
+                "is_private": bool(channel["is_private"]),
+            }
+
+            if channel_type == "public":
+                channels_payload.append(payload)
+            elif channel_type == "private":
+                groups_payload.append(payload)
+            elif channel_type == "im":
+                dms_payload.append(
+                    {
+                        "id": import_id,
+                        "created": created_at,
+                        "members": members,
+                    }
+                )
+            else:
+                mpims_payload.append(
+                    {
+                        "id": import_id,
+                        "created": created_at,
+                        "members": members,
+                    }
+                )
+
+        dump_json(str(out_dir / "users.json"), users)
+        dump_json(str(out_dir / "channels.json"), channels_payload)
+        dump_json(str(out_dir / "groups.json"), groups_payload)
+        dump_json(str(out_dir / "dms.json"), dms_payload)
+        dump_json(str(out_dir / "mpims.json"), mpims_payload)
+        dump_json(
+            str(out_dir / "import_id_map.json"),
+            {"users": user_id_map, "channels": channel_id_map},
+        )
+
+        messages_written = 0
+        current_channel: str | None = None
+        current_date: str | None = None
+        buffer: list[dict[str, Any]] = []
+
+        def _flush_buffer() -> None:
+            nonlocal buffer
+            if not buffer or current_channel is None or current_date is None:
+                buffer = []
+                return
+            folder = out_dir / channel_folder_map[current_channel]
+            folder.mkdir(parents=True, exist_ok=True)
+            file_path = folder / f"{current_date}.json"
+            dump_json(str(file_path), buffer)
+            buffer = []
+
+        for message in store.iter_messages_for_import(resolved_workspace_id, chunk_size=2000):
+            if limit_messages is not None and messages_written >= limit_messages:
+                break
+            synthetic_channel_id = str(message["channel_id"])
+            if synthetic_channel_id not in channel_id_map:
+                continue
+            synthetic_user_id = str(message["user_id"])
+            user_import_id = user_id_map.get(synthetic_user_id)
+            if not user_import_id:
+                continue
+
+            ts_value = int(cast(int, message["ts"]))
+            msg_date = datetime.fromtimestamp(ts_value, tz=UTC).strftime("%Y-%m-%d")
+            if current_channel != synthetic_channel_id or current_date != msg_date:
+                _flush_buffer()
+                current_channel = synthetic_channel_id
+                current_date = msg_date
+
+            msg_payload: dict[str, Any] = {
+                "type": "message",
+                "user": user_import_id,
+                "text": str(message["text"]),
+                "ts": f"{ts_value}.000000",
+            }
+            if message.get("thread_ts") is not None:
+                thread_ts_value = int(cast(int, message["thread_ts"]))
+                msg_payload["thread_ts"] = f"{thread_ts_value}.000000"
+            reactions_raw = message.get("reactions_json")
+            if isinstance(reactions_raw, str):
+                try:
+                    reactions_payload = json.loads(reactions_raw)
+                    if isinstance(reactions_payload, dict):
+                        msg_payload["reactions"] = [
+                            {"name": name, "count": int(count), "users": []}
+                            for name, count in reactions_payload.items()
+                        ]
+                except json.JSONDecodeError:
+                    pass
+            buffer.append(msg_payload)
+            messages_written += 1
+
+        _flush_buffer()
+
+        dump_json(
+            str(out_dir / "summary.json"),
+            {
+                "workspace_id": resolved_workspace_id,
+                "workspace_name": str(workspace["name"]),
+                "users": len(users),
+                "channels": len(channels_payload),
+                "groups": len(groups_payload),
+                "dms": len(dms_payload),
+                "mpims": len(mpims_payload),
+                "messages": messages_written,
+            },
+        )
+
+        typer.echo(f"Wrote import bundle to: {out_dir}")
+    finally:
+        store.close()
+
+
 @app.command("oauth-pack")
 def oauth_pack(
     db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
@@ -591,6 +877,171 @@ def oauth_pack(
         )
 
         typer.echo(f"Wrote OAuth pack to: {out_dir}")
+    finally:
+        store.close()
+
+
+@app.command("seed-live")
+def seed_live(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    tokens: str = typer.Option(..., help="JSON file with per-user tokens"),
+    channel_map: str = typer.Option(
+        ..., help="JSON map of synthetic channel id -> Slack channel id"
+    ),
+    report: str | None = typer.Option(None, help="Write summary report JSON path"),
+    limit_messages: int | None = typer.Option(None, help="Limit number of messages to post"),
+    dry_run: bool = typer.Option(True, help="Do not call Slack APIs"),
+    base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    min_delay_ms: int = typer.Option(200, help="Delay between posts in ms"),
+    continue_on_error: bool = typer.Option(True, help="Continue on Slack errors"),
+) -> None:
+    """Post messages to Slack as users using collected user tokens."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        token_map = _load_token_map(tokens)
+        if not token_map:
+            raise typer.BadParameter("No usable tokens found in tokens file.")
+
+        channel_map_payload = _load_json(channel_map)
+        channel_id_map = {
+            str(key): str(value) for key, value in channel_map_payload.items() if value
+        }
+        if not channel_id_map:
+            raise typer.BadParameter("Channel map is empty.")
+
+        channels = {
+            str(row["id"]): {
+                "channel_type": str(row["channel_type"]),
+                "name": str(row["name"]),
+            }
+            for row in store.iter_channels(resolved_workspace_id, chunk_size=1000)
+        }
+
+        channel_members: dict[str, list[str]] = {}
+        for member in store.iter_channel_members(resolved_workspace_id, chunk_size=2000):
+            channel_members.setdefault(str(member["channel_id"]), []).append(str(member["user_id"]))
+
+        dm_cache: dict[str, str] = {}
+        stats = {
+            "planned": 0,
+            "posted": 0,
+            "skipped_missing_user": 0,
+            "skipped_missing_channel": 0,
+            "skipped_missing_members": 0,
+            "errors": 0,
+        }
+
+        def _resolve_dm_channel_id(synthetic_channel_id: str, author_token: str) -> str | None:
+            if synthetic_channel_id in dm_cache:
+                return dm_cache[synthetic_channel_id]
+            members = channel_members.get(synthetic_channel_id, [])
+            slack_users = [
+                token_map[user_id]["slack_user_id"] for user_id in members if user_id in token_map
+            ]
+            if len(slack_users) < 2:
+                return None
+            payload = {"users": ",".join(sorted(set(slack_users)))}
+            response = _slack_post_json(author_token, f"{base_url}/conversations.open", payload)
+            if not response.get("ok"):
+                raise RuntimeError(f"conversations.open failed: {response}")
+            channel_id = str(response["channel"]["id"])
+            dm_cache[synthetic_channel_id] = channel_id
+            return channel_id
+
+        delay = max(0, min_delay_ms) / 1000.0
+        for message in store.iter_messages_chronological(resolved_workspace_id, chunk_size=2000):
+            if limit_messages is not None and stats["planned"] >= limit_messages:
+                break
+            synthetic_user_id = str(message["user_id"])
+            token_entry = token_map.get(synthetic_user_id)
+            if not token_entry:
+                stats["skipped_missing_user"] += 1
+                continue
+
+            synthetic_channel_id = str(message["channel_id"])
+            channel_info = channels.get(synthetic_channel_id)
+            if not channel_info:
+                stats["skipped_missing_channel"] += 1
+                continue
+
+            channel_type = channel_info["channel_type"]
+            slack_channel_id: str | None = None
+            if channel_type in ("public", "private"):
+                slack_channel_id = channel_id_map.get(synthetic_channel_id)
+            else:
+                slack_channel_id = _resolve_dm_channel_id(
+                    synthetic_channel_id, token_entry["access_token"]
+                )
+
+            if not slack_channel_id:
+                stats["skipped_missing_members"] += 1
+                continue
+
+            stats["planned"] += 1
+            if dry_run:
+                continue
+
+            payload: dict[str, Any] = {
+                "channel": slack_channel_id,
+                "text": str(message["text"]),
+            }
+            if message.get("thread_ts") is not None:
+                payload["thread_ts"] = str(message["thread_ts"])
+
+            try:
+                response = _slack_post_json(
+                    token_entry["access_token"],
+                    f"{base_url}/chat.postMessage",
+                    payload,
+                )
+            except HTTPError as exc:
+                if exc.code == 429:
+                    retry_after = int(exc.headers.get("Retry-After", "1"))
+                    time.sleep(retry_after)
+                    response = _slack_post_json(
+                        token_entry["access_token"],
+                        f"{base_url}/chat.postMessage",
+                        payload,
+                    )
+                else:
+                    stats["errors"] += 1
+                    if not continue_on_error:
+                        raise
+                    continue
+
+            if not response.get("ok"):
+                error = response.get("error")
+                if error == "ratelimited":
+                    time.sleep(1)
+                    response = _slack_post_json(
+                        token_entry["access_token"],
+                        f"{base_url}/chat.postMessage",
+                        payload,
+                    )
+                if not response.get("ok"):
+                    stats["errors"] += 1
+                    if not continue_on_error:
+                        raise RuntimeError(f"chat.postMessage failed: {response}")
+                    continue
+
+            stats["posted"] += 1
+            if delay:
+                time.sleep(delay)
+
+        if report:
+            dump_json(report, stats)
+
+        typer.echo(
+            f"Seed live complete (planned={stats['planned']} posted={stats['posted']} "
+            f"dry_run={dry_run})."
+        )
     finally:
         store.close()
 

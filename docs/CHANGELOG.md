@@ -6,6 +6,8 @@
 - Updated `make build` to attempt `python -m build --no-isolation`, but skip if `setuptools` is missing
   (common in sandboxed/offline environments).
 - Added `swsynth oauth-pack` to generate per-user Slack OAuth URLs for clickops token collection.
+- Added `swsynth seed-import` to generate a Slack export-style import bundle.
+- Added `swsynth seed-live` to post messages to Slack using per-user tokens.
 
 ## v0.1.2
 - Added DM/MPDM channel generation plus a channel member table.
