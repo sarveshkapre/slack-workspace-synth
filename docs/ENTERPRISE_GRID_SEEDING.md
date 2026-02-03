@@ -128,6 +128,7 @@ Keep it explicit and composable:
    - Generates a synthetic channel id -> Slack channel id mapping (by name, or via API).
 8. `swsynth seed-live` (available now):
    - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
+   - Can auto-build the channel map from Slack channel export/API if no map is provided.
 
 ## Operational notes
 

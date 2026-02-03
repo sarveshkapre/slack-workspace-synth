@@ -10,6 +10,7 @@
 - Added `swsynth seed-live` to post messages to Slack using per-user tokens.
 - Added `swsynth oauth-callback` to exchange OAuth codes for per-user tokens.
 - Added `swsynth channel-map` to generate a synthetic-to-Slack channel mapping.
+- Extended `swsynth seed-live` to auto-generate the channel map when none is provided.
 
 ## v0.1.2
 - Added DM/MPDM channel generation plus a channel member table.

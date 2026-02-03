@@ -66,6 +66,12 @@ Post messages live using per-user tokens (dry-run by default):
 swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --channel-map ./channel_map.json --report ./seed_report.json
 ```
 
+You can also let `seed-live` build the channel map from a Slack channel export or API:
+```bash
+. .venv/bin/activate
+swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --slack-channels ./slack_channels.json --report ./seed_report.json
+```
+
 Import from JSONL:
 ```bash
 . .venv/bin/activate

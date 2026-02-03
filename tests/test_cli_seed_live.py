@@ -13,7 +13,7 @@ def test_seed_live_dry_run(tmp_path: Path) -> None:
     source_db = tmp_path / "source.db"
     report_path = tmp_path / "report.json"
     tokens_path = tmp_path / "tokens.json"
-    channel_map_path = tmp_path / "channel_map.json"
+    slack_channels_path = tmp_path / "slack_channels.json"
 
     result = runner.invoke(
         app,
@@ -59,10 +59,13 @@ def test_seed_live_dry_run(tmp_path: Path) -> None:
     }
     tokens_path.write_text(json.dumps(tokens_payload), encoding="utf-8")
 
-    channel_map_payload = {
-        str(channel["id"]): f"C{idx:08d}" for idx, channel in enumerate(channels, start=1)
+    slack_channels_payload = {
+        "channels": [
+            {"id": f"C{idx:08d}", "name": str(channel["name"])}
+            for idx, channel in enumerate(channels, start=1)
+        ]
     }
-    channel_map_path.write_text(json.dumps(channel_map_payload), encoding="utf-8")
+    slack_channels_path.write_text(json.dumps(slack_channels_payload), encoding="utf-8")
 
     seed = runner.invoke(
         app,
@@ -72,8 +75,8 @@ def test_seed_live_dry_run(tmp_path: Path) -> None:
             str(source_db),
             "--tokens",
             str(tokens_path),
-            "--channel-map",
-            str(channel_map_path),
+            "--slack-channels",
+            str(slack_channels_path),
             "--report",
             str(report_path),
             "--limit-messages",
