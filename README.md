@@ -48,6 +48,12 @@ Generate per-user OAuth URLs for clickops collection:
 swsynth oauth-pack --db ./data/acme.db --client-id YOUR_CLIENT_ID --out ./oauth
 ```
 
+Generate a synthetic-to-Slack channel map:
+```bash
+. .venv/bin/activate
+swsynth channel-map --db ./data/acme.db --slack-channels ./slack_channels.json --out ./channel_map.json
+```
+
 Run a local OAuth callback to capture user tokens:
 ```bash
 . .venv/bin/activate

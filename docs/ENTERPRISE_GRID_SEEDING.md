@@ -124,7 +124,9 @@ Keep it explicit and composable:
    - Generates per-user OAuth URLs + `state_map.json` for clickops token collection.
 6. `swsynth oauth-callback` (available now):
    - Runs a local callback server to exchange OAuth codes for user tokens.
-7. `swsynth seed-live` (available now):
+7. `swsynth channel-map` (available now):
+   - Generates a synthetic channel id -> Slack channel id mapping (by name, or via API).
+8. `swsynth seed-live` (available now):
    - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
 
 ## Operational notes

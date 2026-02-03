@@ -75,6 +75,19 @@ def _slack_post_json(token: str, url: str, payload: dict[str, Any]) -> dict[str,
     return parsed
 
 
+def _slack_get_json(token: str, url: str, params: dict[str, str]) -> dict[str, Any]:
+    query = urlencode(params)
+    request = Request(f"{url}?{query}", method="GET")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urlopen(request, timeout=30) as response:
+        data = response.read().decode("utf-8")
+    parsed = json.loads(data)
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Unexpected Slack response: {data[:200]}")
+    return parsed
+
+
 def _load_token_map(path: str) -> dict[str, dict[str, str]]:
     payload = _load_json(path)
     entries: dict[str, dict[str, str]] = {}
@@ -1079,6 +1092,128 @@ def seed_live(
             f"Seed live complete (planned={stats['planned']} posted={stats['posted']} "
             f"dry_run={dry_run})."
         )
+    finally:
+        store.close()
+
+
+@app.command("channel-map")
+def channel_map(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    out: str = typer.Option("./channel_map.json", help="Output JSON path"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    slack_token: str | None = typer.Option(
+        None, help="Slack token (required unless --slack-channels is provided)"
+    ),
+    slack_channels: str | None = typer.Option(
+        None, help="JSON file of Slack channels (offline mapping)"
+    ),
+    include_private: bool = typer.Option(True, help="Include private channels"),
+    create_missing: bool = typer.Option(False, help="Create missing channels via Slack API"),
+    base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    team_id: str | None = typer.Option(None, help="Enterprise Grid team/workspace id"),
+    limit: int | None = typer.Option(None, help="Limit number of Slack channels to fetch"),
+) -> None:
+    """Generate synthetic channel id -> Slack channel id mapping."""
+    store = SQLiteStore(db)
+    try:
+        resolved_workspace_id = workspace_id or store.latest_workspace_id()
+        if not resolved_workspace_id:
+            raise typer.BadParameter("No workspaces found in DB; generate one first.")
+
+        channels = [
+            row
+            for row in store.iter_channels(resolved_workspace_id, chunk_size=1000)
+            if str(row["channel_type"]) in ("public", "private")
+        ]
+        if not include_private:
+            channels = [row for row in channels if str(row["channel_type"]) == "public"]
+
+        if not channels:
+            raise typer.BadParameter("No public/private channels found to map.")
+
+        slack_entries: list[dict[str, Any]] = []
+        if slack_channels:
+            payload = _load_json(slack_channels)
+            if isinstance(payload.get("channels"), list):
+                slack_entries = [c for c in payload["channels"] if isinstance(c, dict)]
+            elif isinstance(payload.get("data"), list):
+                slack_entries = [c for c in payload["data"] if isinstance(c, dict)]
+            elif isinstance(payload, list):
+                slack_entries = [c for c in payload if isinstance(c, dict)]
+            else:
+                raise typer.BadParameter("Unrecognized slack-channels payload.")
+        else:
+            if not slack_token:
+                raise typer.BadParameter("Provide --slack-token or --slack-channels.")
+            types = ["public_channel"]
+            if include_private:
+                types.append("private_channel")
+            cursor: str | None = None
+            fetched = 0
+            while True:
+                params = {"limit": "200", "types": ",".join(types)}
+                if cursor:
+                    params["cursor"] = cursor
+                if team_id:
+                    params["team_id"] = team_id
+                response = _slack_get_json(slack_token, f"{base_url}/conversations.list", params)
+                if not response.get("ok"):
+                    raise RuntimeError(f"conversations.list failed: {response}")
+                batch = response.get("channels")
+                if isinstance(batch, list):
+                    slack_entries.extend([c for c in batch if isinstance(c, dict)])
+                    fetched += len(batch)
+                cursor = None
+                metadata = response.get("response_metadata")
+                if isinstance(metadata, dict):
+                    cursor = str(metadata.get("next_cursor") or "") or None
+                if not cursor:
+                    break
+                if limit is not None and fetched >= limit:
+                    break
+
+        slack_by_name = {
+            str(entry.get("name")): entry
+            for entry in slack_entries
+            if entry.get("id") and entry.get("name")
+        }
+
+        mapping: dict[str, str] = {}
+        missing: list[dict[str, Any]] = []
+        for channel in channels:
+            name = str(channel["name"])
+            synthetic_id = str(channel["id"])
+            existing = slack_by_name.get(name)
+            if existing:
+                mapping[synthetic_id] = str(existing["id"])
+            else:
+                missing.append(channel)
+
+        if missing and create_missing:
+            if not slack_token:
+                raise typer.BadParameter("create-missing requires --slack-token.")
+            for channel in missing:
+                name = str(channel["name"])
+                payload = {"name": name, "is_private": bool(channel["is_private"])}
+                response = _slack_post_json(
+                    slack_token, f"{base_url}/conversations.create", payload
+                )
+                if not response.get("ok"):
+                    raise RuntimeError(f"conversations.create failed: {response}")
+                channel_id = str(response["channel"]["id"])
+                mapping[str(channel["id"])] = channel_id
+
+        if missing and not create_missing:
+            missing_names = ", ".join(str(ch["name"]) for ch in missing[:10])
+            raise typer.BadParameter(
+                f"Missing {len(missing)} channels in Slack (e.g. {missing_names}). "
+                "Create them or pass --create-missing."
+            )
+
+        dump_json(out, mapping)
+        typer.echo(f"Wrote channel map to: {out}")
     finally:
         store.close()
 
