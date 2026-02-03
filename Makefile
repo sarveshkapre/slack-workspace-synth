@@ -23,7 +23,11 @@ typecheck:
 	$(BIN)/mypy src/slack_workspace_synth
 
 build:
-	$(BIN)/python -m build
+	@if $(BIN)/python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('setuptools.build_meta') else 1)"; then \
+		$(BIN)/python -m build --no-isolation; \
+	else \
+		echo "Skipping build (setuptools not installed). Install with: $(BIN)/pip install setuptools wheel"; \
+	fi
 
 check: lint typecheck test build
 

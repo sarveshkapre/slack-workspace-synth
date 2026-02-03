@@ -44,23 +44,13 @@ def generate(
     seed: int = typer.Option(42, help="Random seed"),
     db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
     batch_size: int = typer.Option(500, help="Insert batch size"),
-    channel_members_min: int | None = typer.Option(
-        None, help="Minimum members per channel"
-    ),
-    channel_members_max: int | None = typer.Option(
-        None, help="Maximum members per channel"
-    ),
-    mpdm_members_min: int | None = typer.Option(
-        None, help="Minimum members per MPDM"
-    ),
-    mpdm_members_max: int | None = typer.Option(
-        None, help="Maximum members per MPDM"
-    ),
+    channel_members_min: int | None = typer.Option(None, help="Minimum members per channel"),
+    channel_members_max: int | None = typer.Option(None, help="Maximum members per channel"),
+    mpdm_members_min: int | None = typer.Option(None, help="Minimum members per MPDM"),
+    mpdm_members_max: int | None = typer.Option(None, help="Maximum members per MPDM"),
     plugin: list[str] | None = typer.Option(None, help="Plugin module path"),
     export_summary: str | None = typer.Option(None, help="Write summary JSON path"),
-    profile: str = typer.Option(
-        "default", help="Generation profile: default or enterprise"
-    ),
+    profile: str = typer.Option("default", help="Generation profile: default or enterprise"),
 ) -> None:
     """Generate a synthetic workspace into SQLite."""
     profiles = {
@@ -101,14 +91,10 @@ def generate(
     resolved_messages = messages if messages is not None else defaults["messages"]
     resolved_files = files if files is not None else defaults["files"]
     resolved_channel_members_min = (
-        channel_members_min
-        if channel_members_min is not None
-        else defaults["channel_members_min"]
+        channel_members_min if channel_members_min is not None else defaults["channel_members_min"]
     )
     resolved_channel_members_max = (
-        channel_members_max
-        if channel_members_max is not None
-        else defaults["channel_members_max"]
+        channel_members_max if channel_members_max is not None else defaults["channel_members_max"]
     )
     resolved_mpdm_members_min = (
         mpdm_members_min if mpdm_members_min is not None else defaults["mpdm_members_min"]

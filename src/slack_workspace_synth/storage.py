@@ -157,8 +157,7 @@ class SQLiteStore:
 
     def insert_channels(self, channels: Iterable[Channel]) -> None:
         rows = [
-            (c.id, c.workspace_id, c.name, c.is_private, c.channel_type, c.topic)
-            for c in channels
+            (c.id, c.workspace_id, c.name, c.is_private, c.channel_type, c.topic) for c in channels
         ]
         self.conn.executemany(
             (
@@ -316,7 +315,11 @@ class SQLiteStore:
     ) -> list[dict[str, object]]:
         if channel_type:
             cursor = self.conn.execute(
-                "SELECT * FROM channels WHERE workspace_id = ? AND channel_type = ? LIMIT ? OFFSET ?",
+                (
+                    "SELECT * FROM channels"
+                    " WHERE workspace_id = ? AND channel_type = ?"
+                    " LIMIT ? OFFSET ?"
+                ),
                 (workspace_id, channel_type, limit, offset),
             )
         else:
@@ -362,7 +365,11 @@ class SQLiteStore:
     ) -> list[dict[str, object]]:
         if channel_id:
             cursor = self.conn.execute(
-                "SELECT * FROM channel_members WHERE workspace_id = ? AND channel_id = ? LIMIT ? OFFSET ?",
+                (
+                    "SELECT * FROM channel_members"
+                    " WHERE workspace_id = ? AND channel_id = ?"
+                    " LIMIT ? OFFSET ?"
+                ),
                 (workspace_id, channel_id, limit, offset),
             )
         else:
@@ -443,7 +450,11 @@ class SQLiteStore:
         self, workspace_id: str, *, chunk_size: int = 2000
     ) -> Iterable[dict[str, object]]:
         yield from self._iter_query(
-            "SELECT * FROM channel_members WHERE workspace_id = ? ORDER BY channel_id ASC, user_id ASC",
+            (
+                "SELECT * FROM channel_members"
+                " WHERE workspace_id = ?"
+                " ORDER BY channel_id ASC, user_id ASC"
+            ),
             (workspace_id,),
             chunk_size=chunk_size,
         )

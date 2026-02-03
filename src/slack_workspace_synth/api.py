@@ -136,9 +136,7 @@ def list_channel_members(
             if next_cursor:
                 response.headers["X-Next-Cursor"] = next_cursor
             return rows
-        return store.list_channel_members(
-            workspace_id, limit, offset, channel_id=channel_id
-        )
+        return store.list_channel_members(workspace_id, limit, offset, channel_id=channel_id)
     finally:
         store.close()
 

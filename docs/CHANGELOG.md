@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Unreleased
+- Added `docs/ENTERPRISE_GRID_SEEDING.md` with a practical plan for Enterprise Grid seeding using Entra SCIM,
+  per-user OAuth (for true user-authored messages), and optional bulk history import.
+- Updated `make build` to attempt `python -m build --no-isolation`, but skip if `setuptools` is missing
+  (common in sandboxed/offline environments).
+
 ## v0.1.2
 - Added DM/MPDM channel generation plus a channel member table.
 - Added `channel_type` on channels with optional filtering and type counts in summary exports.
