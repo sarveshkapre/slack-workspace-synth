@@ -43,6 +43,8 @@ Pros
 Cons
 - Import is operationally more manual (workspace-admin workflow).
 - Import format and limitations vary by plan and org configuration.
+- Slack does not support importing directly into an Enterprise Grid organization; the typical workaround
+  is to import into a separate workspace, then migrate it into the org.
 
 ### Mode B: Live posting via per-user OAuth tokens (most API-realistic)
 
