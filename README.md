@@ -72,6 +72,12 @@ You can also let `seed-live` build the channel map from a Slack channel export o
 swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --slack-channels ./slack_channels.json --report ./seed_report.json
 ```
 
+Provision channels and invite members in Slack:
+```bash
+. .venv/bin/activate
+swsynth provision-slack --db ./data/acme.db --slack-token xoxp-... --tokens ./tokens.json --out ./channel_map.json
+```
+
 Import from JSONL:
 ```bash
 . .venv/bin/activate

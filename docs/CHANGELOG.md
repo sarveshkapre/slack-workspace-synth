@@ -11,6 +11,7 @@
 - Added `swsynth oauth-callback` to exchange OAuth codes for per-user tokens.
 - Added `swsynth channel-map` to generate a synthetic-to-Slack channel mapping.
 - Extended `swsynth seed-live` to auto-generate the channel map when none is provided.
+- Added `swsynth provision-slack` to create channels and invite members in Slack.
 
 ## v0.1.2
 - Added DM/MPDM channel generation plus a channel member table.

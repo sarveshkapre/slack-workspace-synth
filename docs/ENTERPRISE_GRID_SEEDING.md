@@ -129,6 +129,8 @@ Keep it explicit and composable:
 8. `swsynth seed-live` (available now):
    - Uses collected user tokens to post messages as users, respecting rate limits and idempotency.
    - Can auto-build the channel map from Slack channel export/API if no map is provided.
+9. `swsynth provision-slack` (available now):
+   - Creates missing channels and optionally invites members using Slack APIs.
 
 ## Operational notes
 
