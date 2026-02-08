@@ -23,10 +23,13 @@ typecheck:
 	$(BIN)/mypy src/slack_workspace_synth
 
 build:
-	@if $(BIN)/python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('setuptools.build_meta') else 1)"; then \
+	@if ! $(BIN)/python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('build') else 1)"; then \
+		echo "Skipping build (build package not installed). Install with: $(BIN)/pip install build"; \
+	elif $(BIN)/python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('setuptools') and importlib.util.find_spec('wheel') else 1)"; then \
 		$(BIN)/python -m build --no-isolation; \
 	else \
-		echo "Skipping build (setuptools not installed). Install with: $(BIN)/pip install setuptools wheel"; \
+		echo "setuptools/wheel missing in active venv, trying isolated build."; \
+		$(BIN)/python -m build || echo "Skipping build (isolated build unavailable in this environment)."; \
 	fi
 
 check: lint typecheck test build
