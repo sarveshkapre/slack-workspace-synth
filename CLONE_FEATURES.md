@@ -23,7 +23,7 @@
 - [x] Verification 2026-02-08: `. .venv/bin/activate && pytest -q tests/test_cli_channel_map.py tests/test_cli_generate_validation.py tests/test_cli_provision_slack.py` (pass, 6 tests).
 - [x] Verification 2026-02-08: `. .venv/bin/activate && make check` (pass; lint, mypy, pytest 19 passed, build success).
 - [x] Verification 2026-02-08: Local CLI smoke flow (`swsynth generate`, `swsynth stats`, `swsynth channel-map`, `swsynth provision-slack --dry-run --report`) completed with expected outputs.
-- [x] Verification 2026-02-08: GitHub Actions runs succeeded for pushed commits `c42e3de`, `965b38a`, and `a83578f` (run IDs `21807092238`, `21807093711`, `21807095744`).
+- [x] Verification 2026-02-08: GitHub Actions runs succeeded for pushed commits `c42e3de`, `965b38a`, `a83578f`, and `2709ab6` (run IDs `21807092238`, `21807093711`, `21807095744`, `21807158787`).
 
 ## Insights
 - CI failures from runs `21617680408` through `21618554925` all had the same root cause: `make build` invoked `python -m build --no-isolation` without `wheel` installed in the active venv.
