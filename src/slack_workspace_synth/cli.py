@@ -61,6 +61,11 @@ def _load_json(path: str) -> dict[str, Any]:
     return payload
 
 
+def _load_json_any(path: str) -> Any:
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def _slack_post_json(token: str, url: str, payload: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, method="POST")
@@ -89,10 +94,10 @@ def _slack_get_json(token: str, url: str, params: dict[str, str]) -> dict[str, A
 
 
 def _load_slack_channels_payload(path: str) -> list[dict[str, Any]]:
-    payload = _load_json(path)
-    if isinstance(payload.get("channels"), list):
+    payload = _load_json_any(path)
+    if isinstance(payload, dict) and isinstance(payload.get("channels"), list):
         return [item for item in payload["channels"] if isinstance(item, dict)]
-    if isinstance(payload.get("data"), list):
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
         return [item for item in payload["data"] if isinstance(item, dict)]
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
@@ -362,6 +367,40 @@ def generate(
     resolved_mpdm_members_max = (
         mpdm_members_max if mpdm_members_max is not None else defaults["mpdm_members_max"]
     )
+
+    for label, value in (
+        ("users", resolved_users),
+        ("channels", resolved_channels),
+        ("dm-channels", resolved_dm_channels),
+        ("mpdm-channels", resolved_mpdm_channels),
+        ("messages", resolved_messages),
+        ("files", resolved_files),
+    ):
+        if value < 0:
+            raise typer.BadParameter(f"{label} must be >= 0")
+    if batch_size <= 0:
+        raise typer.BadParameter("batch-size must be >= 1")
+    if resolved_channel_members_min <= 0 or resolved_channel_members_max <= 0:
+        raise typer.BadParameter("channel member bounds must be >= 1")
+    if resolved_channel_members_min > resolved_channel_members_max:
+        raise typer.BadParameter("channel-members-min must be <= channel-members-max")
+    if resolved_mpdm_members_min <= 0 or resolved_mpdm_members_max <= 0:
+        raise typer.BadParameter("mpdm member bounds must be >= 1")
+    if resolved_mpdm_members_min > resolved_mpdm_members_max:
+        raise typer.BadParameter("mpdm-members-min must be <= mpdm-members-max")
+    if resolved_users == 0 and (
+        resolved_dm_channels > 0
+        or resolved_mpdm_channels > 0
+        or resolved_messages > 0
+        or resolved_files > 0
+    ):
+        raise typer.BadParameter("users must be > 0 when generating DMs/MPDMs, messages, or files.")
+    total_channels = resolved_channels + resolved_dm_channels + resolved_mpdm_channels
+    if total_channels == 0 and (resolved_messages > 0 or resolved_files > 0):
+        raise typer.BadParameter(
+            "At least one channel (public/private/im/mpim) is required for messages/files."
+        )
+
     config = GenerationConfig(
         workspace_name=workspace,
         users=resolved_users,
@@ -1351,6 +1390,7 @@ def provision_slack(
     user_map: str | None = typer.Option(None, help="User map JSON (synthetic -> Slack id)"),
     invite_batch: int = typer.Option(30, help="Invite batch size"),
     dry_run: bool = typer.Option(False, help="Do not call Slack APIs"),
+    report: str | None = typer.Option(None, help="Write provisioning report JSON path"),
     base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
     team_id: str | None = typer.Option(None, help="Enterprise Grid team/workspace id"),
     limit_channels: int | None = typer.Option(None, help="Limit Slack channels to fetch"),
@@ -1466,6 +1506,17 @@ def provision_slack(
                             stats["invite_errors"] += 1
                             continue
                     stats["invites_sent"] += len(batch)
+
+        if report:
+            dump_json(
+                report,
+                {
+                    "workspace_id": resolved_workspace_id,
+                    "dry_run": dry_run,
+                    "channel_map_path": out,
+                    "stats": stats,
+                },
+            )
 
         typer.echo(
             "Provisioned channels "

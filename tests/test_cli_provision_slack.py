@@ -12,6 +12,7 @@ runner = CliRunner()
 def test_provision_slack_dry_run(tmp_path: Path) -> None:
     source_db = tmp_path / "source.db"
     channel_map_path = tmp_path / "channel_map.json"
+    report_path = tmp_path / "provision_report.json"
     tokens_path = tmp_path / "tokens.json"
     slack_channels_path = tmp_path / "slack_channels.json"
 
@@ -77,9 +78,14 @@ def test_provision_slack_dry_run(tmp_path: Path) -> None:
             str(tokens_path),
             "--out",
             str(channel_map_path),
+            "--report",
+            str(report_path),
             "--dry-run",
             "--allow-missing",
         ],
     )
     assert provision.exit_code == 0, provision.stdout
     assert channel_map_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["dry_run"] is True
+    assert report["stats"]["channels_mapped"] >= 1
