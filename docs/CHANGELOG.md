@@ -8,6 +8,7 @@
 - Added validation guards for `swsynth generate` to fail fast on invalid counts, batch size, and membership
   bounds.
 - Added `--report` to `swsynth provision-slack` to emit machine-readable provisioning stats.
+- Updated GitHub Actions CodeQL workflow steps from `v3` to `v4` to avoid upcoming action deprecation.
 - Added `docs/ENTERPRISE_GRID_SEEDING.md` with a practical plan for Enterprise Grid seeding using Entra SCIM,
   per-user OAuth (for true user-authored messages), and optional bulk history import.
 - Added `swsynth oauth-pack` to generate per-user Slack OAuth URLs for clickops token collection.
