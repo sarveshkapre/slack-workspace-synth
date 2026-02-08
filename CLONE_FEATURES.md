@@ -11,6 +11,7 @@
 - [ ] P1: Add incremental export/import mode with dedupe keys for append-style sync workflows.
 - [ ] P2: Add retry/backoff strategy abstraction for Slack API calls (shared for `seed-live` + `provision-slack`).
 - [ ] P2: Add optional dry-run planning output for `seed-live` similar to provisioning report shape.
+- [ ] P2: Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
 - [ ] P3: Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented
