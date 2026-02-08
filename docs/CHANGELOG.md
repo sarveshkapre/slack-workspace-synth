@@ -1,10 +1,15 @@
 # CHANGELOG
 
 ## Unreleased
+- Fixed CI `make check` failures by making `make build` fall back to isolated builds when the active venv
+  is missing `setuptools`/`wheel`.
+- Fixed Slack channel payload parsing for `channel-map`/`seed-live`/`provision-slack` so
+  `--slack-channels` now accepts top-level JSON arrays in addition to object wrappers.
+- Added validation guards for `swsynth generate` to fail fast on invalid counts, batch size, and membership
+  bounds.
+- Added `--report` to `swsynth provision-slack` to emit machine-readable provisioning stats.
 - Added `docs/ENTERPRISE_GRID_SEEDING.md` with a practical plan for Enterprise Grid seeding using Entra SCIM,
   per-user OAuth (for true user-authored messages), and optional bulk history import.
-- Updated `make build` to attempt `python -m build --no-isolation`, but skip if `setuptools` is missing
-  (common in sandboxed/offline environments).
 - Added `swsynth oauth-pack` to generate per-user Slack OAuth URLs for clickops token collection.
 - Added `swsynth seed-import` to generate a Slack export-style import bundle.
 - Added `swsynth seed-live` to post messages to Slack using per-user tokens.

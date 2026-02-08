@@ -53,6 +53,7 @@ Generate a synthetic-to-Slack channel map:
 . .venv/bin/activate
 swsynth channel-map --db ./data/acme.db --slack-channels ./slack_channels.json --out ./channel_map.json
 ```
+`--slack-channels` accepts either `{"channels":[...]}` / `{"data":[...]}` payloads or a top-level array.
 
 Run a local OAuth callback to capture user tokens:
 ```bash
@@ -75,7 +76,7 @@ swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --slack-channels ./
 Provision channels and invite members in Slack:
 ```bash
 . .venv/bin/activate
-swsynth provision-slack --db ./data/acme.db --slack-token xoxp-... --tokens ./tokens.json --out ./channel_map.json
+swsynth provision-slack --db ./data/acme.db --slack-token xoxp-... --tokens ./tokens.json --out ./channel_map.json --report ./provision_report.json
 ```
 
 Import from JSONL:
