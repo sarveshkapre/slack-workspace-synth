@@ -6,6 +6,7 @@ import json
 import random
 import time
 import uuid
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -965,6 +966,10 @@ def seed_import(
     include_mpims: bool = typer.Option(True, help="Include multi-party DMs"),
     include_bots: bool = typer.Option(False, help="Include bot users"),
     limit_messages: int | None = typer.Option(None, help="Limit number of messages"),
+    zip_out: str | None = typer.Option(None, "--zip-out", help="Write a .zip bundle to this path"),
+    zip_bundle: bool = typer.Option(
+        False, "--zip", help="Also write a .zip bundle next to the output directory"
+    ),
 ) -> None:
     """Generate a Slack export-style import bundle from the SQLite DB."""
     store = SQLiteStore(db)
@@ -1165,6 +1170,32 @@ def seed_import(
                 "messages": messages_written,
             },
         )
+
+        resolved_zip_path: Path | None = None
+        if zip_out:
+            resolved_zip_path = Path(zip_out)
+        elif zip_bundle:
+            resolved_zip_path = Path(f"{out_dir}.zip")
+
+        if resolved_zip_path:
+            if resolved_zip_path.exists():
+                raise typer.BadParameter(f"Zip already exists: {resolved_zip_path}")
+            resolved_zip_path.parent.mkdir(parents=True, exist_ok=True)
+
+            files = [
+                p
+                for p in out_dir.rglob("*")
+                if p.is_file() and p.resolve() != resolved_zip_path.resolve()
+            ]
+            files.sort(key=lambda item: item.relative_to(out_dir).as_posix())
+
+            with zipfile.ZipFile(
+                resolved_zip_path, mode="w", compression=zipfile.ZIP_DEFLATED
+            ) as archive:
+                for path in files:
+                    archive.write(path, arcname=path.relative_to(out_dir).as_posix())
+
+            typer.echo(f"Wrote import bundle zip to: {resolved_zip_path}")
 
         typer.echo(f"Wrote import bundle to: {out_dir}")
     finally:

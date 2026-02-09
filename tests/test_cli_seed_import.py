@@ -1,4 +1,5 @@
 import json
+import zipfile
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -64,3 +65,69 @@ def test_seed_import_bundle(tmp_path: Path) -> None:
 
     conversation_files = [p for p in out_dir.rglob("*.json") if p.parent != out_dir]
     assert conversation_files
+
+
+def test_seed_import_bundle_zip(tmp_path: Path) -> None:
+    source_db = tmp_path / "source.db"
+    out_dir = tmp_path / "import_bundle"
+    zip_path = tmp_path / "import_bundle.zip"
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--workspace",
+            "ImportBundleZipTest",
+            "--users",
+            "3",
+            "--channels",
+            "2",
+            "--dm-channels",
+            "1",
+            "--mpdm-channels",
+            "1",
+            "--messages",
+            "6",
+            "--files",
+            "0",
+            "--seed",
+            "13",
+            "--db",
+            str(source_db),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+
+    pack = runner.invoke(
+        app,
+        [
+            "seed-import",
+            "--db",
+            str(source_db),
+            "--out",
+            str(out_dir),
+            "--limit-messages",
+            "3",
+            "--zip-out",
+            str(zip_path),
+        ],
+    )
+    assert pack.exit_code == 0, pack.stdout
+    assert zip_path.exists()
+
+    with zipfile.ZipFile(zip_path) as handle:
+        names = set(handle.namelist())
+
+    for required in (
+        "users.json",
+        "channels.json",
+        "groups.json",
+        "dms.json",
+        "mpims.json",
+        "import_id_map.json",
+        "summary.json",
+    ):
+        assert required in names
+
+    # Ensure there is at least one conversation/day json under a subfolder.
+    assert any(name.endswith(".json") and "/" in name for name in names)

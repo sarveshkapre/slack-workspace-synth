@@ -41,6 +41,11 @@ Generate a Slack import bundle (export-style):
 . .venv/bin/activate
 swsynth seed-import --db ./data/acme.db --out ./import_bundle
 ```
+Optionally, write a `.zip` bundle for tool compatibility:
+```bash
+. .venv/bin/activate
+swsynth seed-import --db ./data/acme.db --out ./import_bundle --zip-out ./import_bundle.zip
+```
 
 Generate per-user OAuth URLs for clickops collection:
 ```bash
