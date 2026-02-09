@@ -1305,46 +1305,94 @@ def seed_live(
         if not token_map:
             raise typer.BadParameter("No usable tokens found in tokens file.")
 
-        channel_id_map: dict[str, str]
+        # Public/private channel mapping. In dry-run we guarantee zero Slack API calls.
+        channel_id_map: dict[str, str] = {}
+        channel_map_coverage: dict[str, object] = {
+            "source": None,
+            "channels_total": 0,
+            "channels_mapped": 0,
+            "channels_missing": 0,
+            "missing_examples": [],
+        }
+
+        channels_for_map = [
+            row
+            for row in store.iter_channels(resolved_workspace_id, chunk_size=1000)
+            if str(row["channel_type"]) in ("public", "private")
+        ]
+        if not include_private:
+            channels_for_map = [
+                row for row in channels_for_map if str(row["channel_type"]) == "public"
+            ]
+
         if channel_map:
             channel_map_payload = _load_json(channel_map)
+            if not isinstance(channel_map_payload, dict):
+                raise typer.BadParameter(
+                    "channel-map must be a JSON object mapping synthetic channel id -> "
+                    "Slack channel id."
+                )
             channel_id_map = {
                 str(key): str(value) for key, value in channel_map_payload.items() if value
             }
-        else:
-            channels_for_map = [
-                row
-                for row in store.iter_channels(resolved_workspace_id, chunk_size=1000)
-                if str(row["channel_type"]) in ("public", "private")
-            ]
-            if not include_private:
-                channels_for_map = [
-                    row for row in channels_for_map if str(row["channel_type"]) == "public"
-                ]
-            if not channels_for_map:
-                raise typer.BadParameter("No public/private channels available for mapping.")
-            channel_id_map, missing = _generate_channel_map(
-                channels=channels_for_map,
-                include_private=include_private,
-                slack_token=slack_token,
-                slack_channels=slack_channels,
-                create_missing=create_missing,
-                base_url=base_url,
-                team_id=team_id,
-                limit=limit_channels,
-                slack_max_retries=slack_max_retries,
-                slack_timeout_seconds=slack_timeout_seconds,
-                slack_max_backoff_seconds=slack_max_backoff_seconds,
-            )
-            if missing and not create_missing:
-                missing_names = ", ".join(str(ch["name"]) for ch in missing[:10])
-                raise typer.BadParameter(
-                    f"Missing {len(missing)} channels in Slack (e.g. {missing_names}). "
-                    "Create them or pass --create-missing."
+            channel_map_coverage["source"] = "channel_map"
+        elif channels_for_map:
+            if dry_run:
+                if create_missing:
+                    raise typer.BadParameter("--create-missing is not allowed with --dry-run.")
+                if not slack_channels:
+                    raise typer.BadParameter(
+                        "In --dry-run, provide --channel-map or --slack-channels (offline) "
+                        "to avoid Slack API calls."
+                    )
+                channel_id_map, _missing = _generate_channel_map(
+                    channels=channels_for_map,
+                    include_private=include_private,
+                    slack_token=None,
+                    slack_channels=slack_channels,
+                    create_missing=False,
+                    base_url=base_url,
+                    team_id=team_id,
+                    limit=limit_channels,
+                    slack_max_retries=slack_max_retries,
+                    slack_timeout_seconds=slack_timeout_seconds,
+                    slack_max_backoff_seconds=slack_max_backoff_seconds,
                 )
+                channel_map_coverage["source"] = "slack_channels"
+            else:
+                channel_id_map, _missing = _generate_channel_map(
+                    channels=channels_for_map,
+                    include_private=include_private,
+                    slack_token=slack_token,
+                    slack_channels=slack_channels,
+                    create_missing=create_missing,
+                    base_url=base_url,
+                    team_id=team_id,
+                    limit=limit_channels,
+                    slack_max_retries=slack_max_retries,
+                    slack_timeout_seconds=slack_timeout_seconds,
+                    slack_max_backoff_seconds=slack_max_backoff_seconds,
+                )
+                channel_map_coverage["source"] = (
+                    "slack_api" if slack_token and not slack_channels else "slack_channels"
+                )
+                if _missing and not create_missing:
+                    missing_names = ", ".join(str(ch["name"]) for ch in _missing[:10])
+                    raise typer.BadParameter(
+                        f"Missing {len(_missing)} channels in Slack (e.g. {missing_names}). "
+                        "Create them or pass --create-missing."
+                    )
 
-        if not channel_id_map:
-            raise typer.BadParameter("Channel map is empty.")
+        if channels_for_map:
+            missing_channels = [
+                ch for ch in channels_for_map if str(ch["id"]) not in channel_id_map
+            ]
+            channel_map_coverage["channels_total"] = len(channels_for_map)
+            channel_map_coverage["channels_mapped"] = len(channel_id_map)
+            channel_map_coverage["channels_missing"] = len(missing_channels)
+            channel_map_coverage["missing_examples"] = [
+                str(ch["name"]) for ch in missing_channels[:10]
+            ]
 
         channels = {
             str(row["id"]): {
@@ -1359,14 +1407,15 @@ def seed_live(
             channel_members.setdefault(str(member["channel_id"]), []).append(str(member["user_id"]))
 
         dm_cache: dict[str, str] = {}
-        stats = {
-            "planned": 0,
-            "posted": 0,
-            "skipped_missing_user": 0,
-            "skipped_missing_channel": 0,
-            "skipped_missing_members": 0,
-            "errors": 0,
-        }
+        skip_reasons: dict[str, int] = {}
+        planned = 0
+        posted = 0
+        skipped_missing_user = 0
+        skipped_missing_channel = 0
+        skipped_missing_members = 0
+        skipped_requires_slack = 0
+        errors = 0
+        channel_type_counts = store.channel_type_counts(resolved_workspace_id)
 
         def _resolve_dm_channel_id(synthetic_channel_id: str, author_token: str) -> str | None:
             if synthetic_channel_id in dm_cache:
@@ -1394,18 +1443,18 @@ def seed_live(
 
         delay = max(0, min_delay_ms) / 1000.0
         for message in store.iter_messages_chronological(resolved_workspace_id, chunk_size=2000):
-            if limit_messages is not None and stats["planned"] >= limit_messages:
+            if limit_messages is not None and planned >= limit_messages:
                 break
             synthetic_user_id = str(message["user_id"])
             token_entry = token_map.get(synthetic_user_id)
             if not token_entry:
-                stats["skipped_missing_user"] += 1
+                skipped_missing_user += 1
                 continue
 
             synthetic_channel_id = str(message["channel_id"])
             channel_info = channels.get(synthetic_channel_id)
             if not channel_info:
-                stats["skipped_missing_channel"] += 1
+                skipped_missing_channel += 1
                 continue
 
             channel_type = channel_info["channel_type"]
@@ -1413,15 +1462,29 @@ def seed_live(
             if channel_type in ("public", "private"):
                 slack_channel_id = channel_id_map.get(synthetic_channel_id)
             else:
+                if dry_run:
+                    skipped_requires_slack += 1
+                    skip_reasons["dm_requires_conversations_open"] = (
+                        skip_reasons.get("dm_requires_conversations_open", 0) + 1
+                    )
+                    continue
                 slack_channel_id = _resolve_dm_channel_id(
                     synthetic_channel_id, token_entry["access_token"]
                 )
 
             if not slack_channel_id:
-                stats["skipped_missing_members"] += 1
+                skipped_missing_members += 1
+                if channel_type in ("public", "private"):
+                    skip_reasons["missing_channel_map"] = (
+                        skip_reasons.get("missing_channel_map", 0) + 1
+                    )
+                else:
+                    skip_reasons["dm_open_failed_or_missing_members"] = (
+                        skip_reasons.get("dm_open_failed_or_missing_members", 0) + 1
+                    )
                 continue
 
-            stats["planned"] += 1
+            planned += 1
             if dry_run:
                 continue
 
@@ -1442,28 +1505,39 @@ def seed_live(
                     max_backoff_seconds=slack_max_backoff_seconds,
                 )
             except RuntimeError:
-                stats["errors"] += 1
+                errors += 1
                 if not continue_on_error:
                     raise
                 continue
 
             if not response.get("ok"):
-                stats["errors"] += 1
+                errors += 1
                 if not continue_on_error:
                     raise RuntimeError(f"chat.postMessage failed: {response}")
                 continue
 
-            stats["posted"] += 1
+            posted += 1
             if delay:
                 time.sleep(delay)
 
+        stats = {
+            "workspace_id": resolved_workspace_id,
+            "dry_run": dry_run,
+            "planned": planned,
+            "posted": posted,
+            "skipped_missing_user": skipped_missing_user,
+            "skipped_missing_channel": skipped_missing_channel,
+            "skipped_missing_members": skipped_missing_members,
+            "skipped_requires_slack": skipped_requires_slack,
+            "errors": errors,
+            "channel_map": channel_map_coverage,
+            "channel_type_counts": channel_type_counts,
+            "skip_reasons": skip_reasons,
+        }
         if report:
             dump_json(report, stats)
 
-        typer.echo(
-            f"Seed live complete (planned={stats['planned']} posted={stats['posted']} "
-            f"dry_run={dry_run})."
-        )
+        typer.echo(f"Seed live complete (planned={planned} posted={posted} dry_run={dry_run}).")
     finally:
         store.close()
 
