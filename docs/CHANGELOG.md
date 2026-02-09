@@ -1,22 +1,26 @@
 # CHANGELOG
 
 ## Unreleased
+
+## v0.1.3
 - Added `import-jsonl --mode append` to dedupe by primary key and safely re-import exports into an existing DB.
 - Added `seed-import --zip/--zip-out` to emit a Slack export-style `.zip` bundle for better tool compatibility.
-- Added a local benchmark script + docs (`scripts/bench.py`, `docs/BENCHMARKS.md`) for generation + JSONL export baselines.
-- Hardened `seed-live --dry-run` so it never calls Slack APIs (including DM/MPDM opens and channel-map fetch/create),
-  and extended the report with mapping coverage + skip reasons for safer rollout planning.
+- Added `seed-import --validate` to validate required export artifacts exist (and validate the zip when produced).
+- Added a local benchmark script + docs (`scripts/bench.py`, `docs/BENCHMARKS.md`) for generation + JSONL export
+  baselines.
+- Added `export-jsonl --messages-after-ts` and `--files-after-ts` filters to support incremental export workflows.
+- Hardened `seed-live --dry-run` so it never calls Slack APIs (including DM/MPDM opens and channel-map
+  fetch/create), and extended the report with mapping coverage + skip reasons for safer rollout planning.
 - Opened the FastAPI read-only API in SQLite read-only mode and return a clear 400 for missing/invalid DB paths.
 - Added a shared Slack API retry/backoff helper and wired it into `seed-live`, `channel-map`, and
   `provision-slack` (429 `Retry-After`, `ratelimited`, transient 5xx/network errors).
 - Added `swsynth validate-db` plus `swsynth serve --validate-db` for fail-fast DB compatibility checks.
 - Added `schema_version` to per-workspace `meta` to support future compatibility gates.
-- Fixed CI `make check` failures by making `make build` fall back to isolated builds when the active venv
-  is missing `setuptools`/`wheel`.
-- Fixed Slack channel payload parsing for `channel-map`/`seed-live`/`provision-slack` so
-  `--slack-channels` now accepts top-level JSON arrays in addition to object wrappers.
-- Added validation guards for `swsynth generate` to fail fast on invalid counts, batch size, and membership
-  bounds.
+- Fixed CI `make check` failures by making `make build` fall back to isolated builds when the active venv is missing
+  `setuptools`/`wheel`.
+- Fixed Slack channel payload parsing for `channel-map`/`seed-live`/`provision-slack` so `--slack-channels` now
+  accepts top-level JSON arrays in addition to object wrappers.
+- Added validation guards for `swsynth generate` to fail fast on invalid counts, batch size, and membership bounds.
 - Added `--report` to `swsynth provision-slack` to emit machine-readable provisioning stats.
 - Updated GitHub Actions CodeQL workflow steps from `v3` to `v4` to avoid upcoming action deprecation.
 - Added `docs/ENTERPRISE_GRID_SEEDING.md` with a practical plan for Enterprise Grid seeding using Entra SCIM,
