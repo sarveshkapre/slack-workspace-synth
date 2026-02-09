@@ -10,14 +10,17 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P0 (5|2|5|3|2|4): Fix `seed-live --dry-run` so it guarantees **zero** Slack API calls (including DM/MPDM opens and channel mapping fetch/create); fail fast with actionable guidance when inputs would require Slack.
-- [ ] P1 (4|2|4|3|2|4): Enrich `seed-live --report` (especially in dry-run) with channel-type breakdowns, channel-map coverage, and explicit skip reasons for safer live rollout planning.
-- [ ] P1 (4|2|4|2|2|4): Make the FastAPI read-only API open SQLite in read-only mode and avoid schema/PRAGMA mutation; return a clear 400 when the DB path is missing/invalid.
 - [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
 - [ ] P2 (3|4|3|3|3|2): Add incremental export/import mode with dedupe keys for append-style sync workflows.
 - [ ] P3 (2|3|3|2|2|3): Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented
+- [x] 2026-02-09: Hardened `seed-live --dry-run` to guarantee zero Slack API calls (including DM/MPDM opens and
+  channel-map fetch/create), plus richer machine-readable report fields for safer rollout planning
+  (`src/slack_workspace_synth/cli.py`, `tests/test_cli_seed_live.py`) (commits `ff66ccd`).
+- [x] 2026-02-09: Opened FastAPI API SQLite connections in read-only mode and return HTTP 400 for missing/invalid DB
+  paths (no schema/PRAGMA mutation) (`src/slack_workspace_synth/api.py`, `src/slack_workspace_synth/storage.py`,
+  `tests/test_api_cursor.py`) (commit `d7ea972`).
 - [x] 2026-02-09: Added shared Slack API retry/backoff helper and wired it into `seed-live`, `channel-map`,
   and `provision-slack` (new CLI knobs: `--slack-max-retries`, `--slack-timeout-seconds`,
   `--slack-max-backoff-seconds`) (`src/slack_workspace_synth/cli.py`, `tests/test_slack_retry.py`).
@@ -45,8 +48,8 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - Slack channel export payloads are not consistently wrapped; accepting top-level arrays removes friction for offline mapping/provisioning.
 - Machine-readable run reports improve repeatability and provide evidence for autonomous maintenance loops.
 - CI emitted a CodeQL deprecation annotation; proactive action upgrades reduce future breakage risk.
-- Market scan (untrusted): Slack Web API rate limiting is expected behavior (429 + `Retry-After`), and Slack’s docs explicitly recommend handling retries/backoff; this is table-stakes for any real Slack seeding/provisioning flow. Sources: https://api.slack.com/docs/rate-limits, https://api.slack.com/docs/rate-limits#tiers_tier4
-- Market scan (untrusted): Adjacent open-source Slack export tooling emphasizes “view/search/forensics” workflows, implying export compatibility and predictable artifact layouts are a common expectation even when the generator is synthetic. Sources: https://github.com/Slacksky/viewexport, https://github.com/rusq/slackdump
+- Market scan (untrusted): Slack Web API rate limiting is expected behavior (429 + `Retry-After`), and Slack’s docs explicitly recommend handling retries/backoff; this is table-stakes for any real Slack seeding/provisioning flow. Sources: https://docs.slack.dev/apis/web-api/rate-limits/, https://api.slack.com/docs/rate-limits
+- Market scan (untrusted): Slack exports have a fairly predictable artifact layout (channels, DMs, users, etc); adjacent tools emphasize “view/search/forensics”, implying export-compatibility and stable output shapes are a common expectation even when the generator is synthetic. Sources: https://slack.com/help/articles/201658943-Export-your-workspace-data, https://github.com/Slacksky/viewexport, https://github.com/rusq/slackdump
 
 ## Notes
 - This file is maintained by the autonomous clone loop.
