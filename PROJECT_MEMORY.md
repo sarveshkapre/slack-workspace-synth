@@ -9,6 +9,7 @@
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
+- 2026-02-09 | `seed-import` emits empty `integration_logs.json` and `canvases.json` placeholders | Some Slack export consumers/tools expect these reference files; emitting empty placeholders improves interoperability without changing the core bundle semantics | `make check` (30 passed) + `tests/test_cli_seed_import.py` asserts presence (including zip) | 38a5aea | high | trusted
 - 2026-02-09 | Add `export-jsonl --messages-after-ts/--files-after-ts` filters for incremental exports | Supports append-style sync workflows by letting operators export only newer messages/files without rewriting full JSONL sets | `make check` (30 passed) + CLI smoke verified filtered JSONL files can be empty and still write correctly | c1759c7 | high | trusted
 - 2026-02-09 | Add `seed-import --validate` to validate on-disk (and optional zip) import bundle artifacts | Makes bulk import workflows safer by failing fast when required artifacts are missing or malformed | `make check` (30 passed) + CLI smoke `seed-import --zip-out ... --validate` succeeded | fe6c4bd | high | trusted
 - 2026-02-09 | Align package versioning + changelog to `0.1.3` | Eliminates version skew between `pyproject.toml` and `slack_workspace_synth.__version__`, and makes built artifacts match documented release notes | `make check` built `slack_workspace_synth-0.1.3*` artifacts successfully | 56aa2ce | high | trusted
@@ -44,6 +45,7 @@
 - 2026-02-09 | `gh run watch 21843056678 --exit-status` | CI concluded `success` for commit `84216dd` | pass
 - 2026-02-09 | `gh run watch 21843127641 --exit-status` | CI concluded `success` for commit `c8a99d4` | pass
 - 2026-02-09 | `gh run watch 21843181336 --exit-status` | CI concluded `success` for commit `8c8ed51` | pass
+- 2026-02-09 | `gh run watch 21843339136 --exit-status` | CI concluded `success` for commit `38a5aea` | pass
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 24 passed | pass
 - 2026-02-09 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --require-workspace --quiet && swsynth serve --validate-db --require-workspace ... && curl /healthz` | `/healthz` returned `{"status":"ok"}` | pass
 - 2026-02-09 | `gh run list --branch main --workflow ci --limit 5` | Runs `21812464708`, `21812467497`, `21812500459` concluded `success` | pass

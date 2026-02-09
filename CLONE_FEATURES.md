@@ -15,6 +15,8 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - [ ] P3 (2|1|3|2|1|4): Add `make clean` to remove local build/test artifacts (`dist/`, `build/`, caches, `*.egg-info`) without touching user data.
 
 ## Implemented
+- [x] 2026-02-09: `seed-import` now emits empty `integration_logs.json` and `canvases.json` placeholders for better
+  export-tool compatibility (`src/slack_workspace_synth/cli.py`, `tests/test_cli_seed_import.py`) (commit `38a5aea`).
 - [x] 2026-02-09: Added incremental JSONL export filters for messages/files via `export-jsonl --messages-after-ts` and
   `--files-after-ts` (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`,
   `tests/test_cli_export_jsonl_filters.py`) (commit `c1759c7`).
@@ -70,6 +72,7 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - CI emitted a CodeQL deprecation annotation; proactive action upgrades reduce future breakage risk.
 - Market scan (untrusted): Slack Web API rate limiting is expected behavior (429 + `Retry-After`), and Slack’s docs explicitly recommend handling retries/backoff; this is table-stakes for any real Slack seeding/provisioning flow. Sources: https://docs.slack.dev/apis/web-api/rate-limits/, https://api.slack.com/docs/rate-limits
 - Market scan (untrusted): Slack exports have a fairly predictable artifact layout (channels, DMs, users, etc); adjacent tools emphasize “view/search/forensics”, implying export-compatibility and stable output shapes are a common expectation even when the generator is synthetic. Sources: https://slack.com/help/articles/201658943-Export-your-workspace-data, https://github.com/Slacksky/viewexport, https://github.com/rusq/slackdump
+- Market scan (untrusted): Slack’s export ZIP format includes reference JSON files beyond channels/users (e.g. `integration_logs.json`, `canvases.json`, optional `content_flags.json` on some plans); emitting placeholders improves interoperability with export consumers. Source: https://slack.com/help/articles/220556107-How-to-read-Slack-data-exports
 - Market scan (untrusted): Many adjacent tools consume Slack exports as `.zip` bundles; emitting a zip improves interoperability for viewer and migration test workflows. Sources: https://slack.com/help/articles/201658943-Export-your-workspace-data, https://viewexport.com/, https://github.com/hfaran/slack-archive-viewer
 
 ## Notes
