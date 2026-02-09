@@ -7,11 +7,13 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] P1: Add schema/version metadata validation command to detect incompatible DBs before API/CLI operations.
-- [ ] P1: Add incremental export/import mode with dedupe keys for append-style sync workflows.
-- [ ] P2: Add retry/backoff strategy abstraction for Slack API calls (shared for `seed-live` + `provision-slack`).
-- [ ] P2: Add optional dry-run planning output for `seed-live` similar to provisioning report shape.
+- [ ] P1: Add `swsynth validate-db` command to fail fast on incompatible SQLite schema/version metadata before API/CLI operations.
+- [ ] P1: Add shared Slack API retry/backoff helper (429 `Retry-After`, `ratelimited`, transient 5xx/network errors) and wire it into `seed-live`, `channel-map`, and `provision-slack`.
+- [ ] P1: Add richer `seed-live --report` dry-run planning details (breakdowns by channel type and skip reasons) for safer live rollout review.
+- [ ] P1: Add focused regression tests for DB validation and Slack retry/report behavior.
 - [ ] P2: Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
+- [ ] P2: Add incremental export/import mode with dedupe keys for append-style sync workflows.
+- [ ] P3: Add API startup DB compatibility gate and optional read-only DB mode for serve-time safety.
 - [ ] P3: Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
+from typing import cast
 
 from .models import Channel, ChannelMember, File, Message, User, Workspace
 
@@ -634,6 +636,139 @@ class SQLiteStore:
             "channel_types": self.channel_type_counts(workspace_id),
         }
         return summary
+
+
+_REQUIRED_TABLES: dict[str, set[str]] = {
+    "workspaces": {"id", "name", "created_at"},
+    "workspace_meta": {"workspace_id", "key", "value"},
+    "users": {"id", "workspace_id", "name", "email", "title", "is_bot"},
+    "channels": {"id", "workspace_id", "name", "is_private", "channel_type", "topic"},
+    "channel_members": {"channel_id", "workspace_id", "user_id"},
+    "messages": {
+        "id",
+        "workspace_id",
+        "channel_id",
+        "user_id",
+        "ts",
+        "text",
+        "thread_ts",
+        "reply_count",
+        "reactions_json",
+    },
+    "files": {
+        "id",
+        "workspace_id",
+        "user_id",
+        "name",
+        "size",
+        "mimetype",
+        "created_ts",
+        "channel_id",
+        "message_id",
+        "url",
+    },
+}
+
+
+def _sqlite_connect_readonly(path: str) -> sqlite3.Connection:
+    # Use read-only mode so validation doesn't mutate unknown DBs.
+    uri = f"file:{path}?mode=ro"
+    return sqlite3.connect(uri, uri=True)
+
+
+def _parse_semver(value: object) -> tuple[int, int, int] | None:
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value.strip())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, object]:
+    """Validate that a SQLite DB appears compatible with slack-workspace-synth.
+
+    This is a read-only check meant for fail-fast CLI diagnostics.
+    """
+    db_path = Path(path)
+    report: dict[str, object] = {
+        "db": str(db_path),
+        "ok": False,
+        "workspace_id": workspace_id,
+        "errors": [],
+        "warnings": [],
+        "meta": {},
+    }
+    errors: list[str] = cast(list[str], report["errors"])
+    warnings: list[str] = cast(list[str], report["warnings"])
+
+    if not db_path.exists():
+        errors.append(f"DB file not found: {db_path}")
+        return report
+
+    try:
+        conn = _sqlite_connect_readonly(str(db_path))
+    except sqlite3.OperationalError as exc:
+        errors.append(f"Unable to open DB read-only: {exc}")
+        return report
+
+    try:
+        conn.row_factory = sqlite3.Row
+        try:
+            table_rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        except sqlite3.DatabaseError as exc:
+            errors.append(f"Not a usable SQLite database: {exc}")
+            return report
+        tables = {str(r["name"]) for r in table_rows}
+        if not tables:
+            errors.append("DB has no tables (did you point at the right SQLite file?).")
+            return report
+
+        for table, required_cols in _REQUIRED_TABLES.items():
+            if table not in tables:
+                errors.append(f"Missing table: {table}")
+                continue
+            col_rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+            cols = {str(r["name"]) for r in col_rows}
+            missing = sorted(required_cols - cols)
+            if missing:
+                errors.append(f"Table {table} missing columns: {', '.join(missing)}")
+
+        # Optional workspace meta inspection for quick operator context.
+        if "workspaces" in tables and "workspace_meta" in tables:
+            resolved_workspace = workspace_id
+            if not resolved_workspace:
+                row = conn.execute(
+                    "SELECT id FROM workspaces ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                resolved_workspace = str(row["id"]) if row else None
+            report["workspace_id"] = resolved_workspace
+
+            if resolved_workspace:
+                meta_rows = conn.execute(
+                    "SELECT key, value FROM workspace_meta WHERE workspace_id = ? ORDER BY key ASC",
+                    (resolved_workspace,),
+                ).fetchall()
+                meta: dict[str, object] = {}
+                for r in meta_rows:
+                    key = str(r["key"])
+                    raw = str(r["value"])
+                    try:
+                        meta[key] = json.loads(raw)
+                    except Exception:
+                        meta[key] = raw
+                report["meta"] = meta
+
+                generator = meta.get("generator")
+                if generator and generator != "slack-workspace-synth":
+                    warnings.append(f"Unexpected generator meta: {generator!r}")
+    finally:
+        conn.close()
+
+    report["ok"] = len(errors) == 0
+    return report
 
 
 def dump_json(path: str, payload: object) -> None:
