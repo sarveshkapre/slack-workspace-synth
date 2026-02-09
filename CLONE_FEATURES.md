@@ -9,12 +9,6 @@
 ## Candidate Features To Do
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
-### Selected (Cycle 1, 2026-02-09)
-- [ ] P1 (5|2|5|3|2|4): Add shared Slack API retry/backoff helper (429 `Retry-After`, `ratelimited`, transient 5xx/network errors) and wire it into `seed-live`, `channel-map`, and `provision-slack`.
-- [ ] P1 (4|2|5|2|2|4): Add `swsynth validate-db` command to fail fast on incompatible SQLite schema/metadata; add `serve --validate-db` option to prevent accidental empty DB creation when pointing at the wrong path.
-- [ ] P1 (4|2|5|2|2|4): Add focused regression tests for DB validation and Slack retry/backoff behavior.
-- [ ] P2 (3|1|4|1|1|5): Refresh docs that are now stale (notably `docs/ROADMAP.md` and `docs/PROJECT.md`) so “Next” items reflect the current shipped feature set.
-
 ### Backlog
 - [ ] P1 (4|2|4|2|2|3): Add richer `seed-live --report` dry-run planning details (breakdowns by channel type and skip reasons) for safer live rollout review.
 - [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
@@ -23,12 +17,23 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - [ ] P3 (2|3|3|2|2|3): Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented
+- [x] 2026-02-09: Added shared Slack API retry/backoff helper and wired it into `seed-live`, `channel-map`,
+  and `provision-slack` (new CLI knobs: `--slack-max-retries`, `--slack-timeout-seconds`,
+  `--slack-max-backoff-seconds`) (`src/slack_workspace_synth/cli.py`, `tests/test_slack_retry.py`).
+- [x] 2026-02-09: Added `swsynth validate-db` plus `swsynth serve --validate-db` and started recording
+  `schema_version` in workspace meta (`src/slack_workspace_synth/cli.py`,
+  `src/slack_workspace_synth/storage.py`, `tests/test_cli_validate_db.py`).
+- [x] 2026-02-09: Refreshed stale roadmap/project docs and README guidance (`docs/ROADMAP.md`,
+  `docs/PROJECT.md`, `docs/CHANGELOG.md`, `README.md`).
 - [x] 2026-02-08: Fixed CI packaging failure by updating `Makefile` build fallback logic to handle missing `wheel`/`setuptools` safely (`Makefile`).
 - [x] 2026-02-08: Fixed Slack channels loader to accept top-level array payloads for `--slack-channels` (`src/slack_workspace_synth/cli.py`, `tests/test_cli_channel_map.py`).
 - [x] 2026-02-08: Added fail-fast generation validation for invalid counts, membership bounds, and batch size (`src/slack_workspace_synth/cli.py`, `tests/test_cli_generate_validation.py`).
 - [x] 2026-02-08: Added `provision-slack --report` JSON evidence output (`src/slack_workspace_synth/cli.py`, `tests/test_cli_provision_slack.py`).
 - [x] 2026-02-08: Updated product memory/docs for behavior changes (`README.md`, `docs/CHANGELOG.md`).
 - [x] 2026-02-08: Upgraded GitHub Actions CodeQL action from `v3` to `v4` (`.github/workflows/ci.yml`).
+- [x] Verification 2026-02-09: `. .venv/bin/activate && make check` (pass; lint, mypy, pytest 24 passed, build success).
+- [x] Verification 2026-02-09: Local CLI smoke flow (`swsynth generate`, `swsynth validate-db --require-workspace`,
+  `swsynth serve --validate-db --require-workspace`, `curl /healthz`) completed with expected outputs.
 - [x] Verification 2026-02-08: `. .venv/bin/activate && pytest -q tests/test_cli_channel_map.py tests/test_cli_generate_validation.py tests/test_cli_provision_slack.py` (pass, 6 tests).
 - [x] Verification 2026-02-08: `. .venv/bin/activate && make check` (pass; lint, mypy, pytest 19 passed, build success).
 - [x] Verification 2026-02-08: Local CLI smoke flow (`swsynth generate`, `swsynth stats`, `swsynth channel-map`, `swsynth provision-slack --dry-run --report`) completed with expected outputs.
