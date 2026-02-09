@@ -71,6 +71,6 @@ make release
 ```
 
 ## Next 3 improvements
-1. Add JSONL import and/or S3 export.
-2. Add channel membership + DM threads.
-3. Add richer file metadata + file body generation.
+1. Add shared Slack API retry/backoff and richer machine-readable reports for safe seeding runs.
+2. Add DB validation and serve-time safety gates (schema/metadata checks, read-only opens).
+3. Add performance baselines (bench scripts + documented targets for large generation/export).

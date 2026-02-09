@@ -1,6 +1,10 @@
 # CHANGELOG
 
 ## Unreleased
+- Added a shared Slack API retry/backoff helper and wired it into `seed-live`, `channel-map`, and
+  `provision-slack` (429 `Retry-After`, `ratelimited`, transient 5xx/network errors).
+- Added `swsynth validate-db` plus `swsynth serve --validate-db` for fail-fast DB compatibility checks.
+- Added `schema_version` to per-workspace `meta` to support future compatibility gates.
 - Fixed CI `make check` failures by making `make build` fall back to isolated builds when the active venv
   is missing `setuptools`/`wheel`.
 - Fixed Slack channel payload parsing for `channel-map`/`seed-live`/`provision-slack` so

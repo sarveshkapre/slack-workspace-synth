@@ -66,6 +66,8 @@ Post messages live using per-user tokens (dry-run by default):
 . .venv/bin/activate
 swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --channel-map ./channel_map.json --report ./seed_report.json
 ```
+Slack calls include retry/backoff; tune with `--slack-max-retries`, `--slack-timeout-seconds`, and
+`--slack-max-backoff-seconds` on `seed-live`/`channel-map`/`provision-slack`.
 
 You can also let `seed-live` build the channel map from a Slack channel export or API:
 ```bash
@@ -91,9 +93,19 @@ Quick stats:
 swsynth stats --db ./data/acme.db
 ```
 
+Validate a DB (schema + metadata sanity checks):
+```bash
+. .venv/bin/activate
+swsynth validate-db --db ./data/acme.db --require-workspace
+```
+
 Run the API:
 ```bash
 swsynth serve --db ./data/acme.db --host 0.0.0.0 --port 8080
+```
+For safer startup (fail fast on incompatible DBs):
+```bash
+swsynth serve --db ./data/acme.db --validate-db --require-workspace
 ```
 
 ## API (read-only)
