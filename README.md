@@ -66,6 +66,9 @@ Post messages live using per-user tokens (dry-run by default):
 . .venv/bin/activate
 swsynth seed-live --db ./data/acme.db --tokens ./tokens.json --channel-map ./channel_map.json --report ./seed_report.json
 ```
+In dry-run mode, `seed-live` guarantees **zero** Slack API calls. Provide `--channel-map` or `--slack-channels` for mapping.
+To actually post messages (and to fetch channel mapping from Slack APIs), run with `--no-dry-run` and provide `--slack-token`
+as needed.
 Slack calls include retry/backoff; tune with `--slack-max-retries`, `--slack-timeout-seconds`, and
 `--slack-max-backoff-seconds` on `seed-live`/`channel-map`/`provision-slack`.
 

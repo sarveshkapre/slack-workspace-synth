@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## Unreleased
+- Hardened `seed-live --dry-run` so it never calls Slack APIs (including DM/MPDM opens and channel-map fetch/create),
+  and extended the report with mapping coverage + skip reasons for safer rollout planning.
+- Opened the FastAPI read-only API in SQLite read-only mode and return a clear 400 for missing/invalid DB paths.
 - Added a shared Slack API retry/backoff helper and wired it into `seed-live`, `channel-map`, and
   `provision-slack` (429 `Retry-After`, `ratelimited`, transient 5xx/network errors).
 - Added `swsynth validate-db` plus `swsynth serve --validate-db` for fail-fast DB compatibility checks.
