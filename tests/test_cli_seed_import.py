@@ -59,6 +59,8 @@ def test_seed_import_bundle(tmp_path: Path) -> None:
     assert (out_dir / "groups.json").exists()
     assert (out_dir / "dms.json").exists()
     assert (out_dir / "mpims.json").exists()
+    assert (out_dir / "integration_logs.json").exists()
+    assert (out_dir / "canvases.json").exists()
     assert (out_dir / "import_id_map.json").exists()
 
     summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
@@ -126,6 +128,8 @@ def test_seed_import_bundle_zip(tmp_path: Path) -> None:
         "groups.json",
         "dms.json",
         "mpims.json",
+        "integration_logs.json",
+        "canvases.json",
         "import_id_map.json",
         "summary.json",
     ):

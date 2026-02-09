@@ -6,6 +6,7 @@
 - Added `import-jsonl --mode append` to dedupe by primary key and safely re-import exports into an existing DB.
 - Added `seed-import --zip/--zip-out` to emit a Slack export-style `.zip` bundle for better tool compatibility.
 - Added `seed-import --validate` to validate required export artifacts exist (and validate the zip when produced).
+- `seed-import` now emits empty `integration_logs.json` and `canvases.json` placeholders for better export-tool compatibility.
 - Added a local benchmark script + docs (`scripts/bench.py`, `docs/BENCHMARKS.md`) for generation + JSONL export
   baselines.
 - Added `export-jsonl --messages-after-ts` and `--files-after-ts` filters to support incremental export workflows.

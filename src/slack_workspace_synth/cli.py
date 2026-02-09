@@ -80,6 +80,8 @@ def _validate_seed_import_bundle(
         "groups.json",
         "dms.json",
         "mpims.json",
+        "integration_logs.json",
+        "canvases.json",
         "import_id_map.json",
         "summary.json",
     ]
@@ -1169,6 +1171,10 @@ def seed_import(
         dump_json(str(out_dir / "groups.json"), groups_payload)
         dump_json(str(out_dir / "dms.json"), dms_payload)
         dump_json(str(out_dir / "mpims.json"), mpims_payload)
+        # Slack exports include these reference files; emit empty placeholders for
+        # export-tool compatibility.
+        dump_json(str(out_dir / "integration_logs.json"), [])
+        dump_json(str(out_dir / "canvases.json"), [])
         dump_json(
             str(out_dir / "import_id_map.json"),
             {"users": user_id_map, "channels": channel_id_map},
