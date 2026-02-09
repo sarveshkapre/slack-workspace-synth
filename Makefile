@@ -2,7 +2,7 @@ PYTHON=python3
 VENV=.venv
 BIN=$(VENV)/bin
 
-.PHONY: setup dev test lint typecheck build check release
+.PHONY: setup dev test lint typecheck build check bench release
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -33,5 +33,8 @@ build:
 	fi
 
 check: lint typecheck test build
+
+bench:
+	$(BIN)/python scripts/bench.py --profile quick --out ./bench_out/quick
 
 release: build

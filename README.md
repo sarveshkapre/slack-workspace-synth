@@ -150,6 +150,9 @@ Example:
 swsynth generate --plugin examples.sample_plugin --db ./data/demo.db
 ```
 
+## Benchmarks
+See `docs/BENCHMARKS.md` for a local benchmark script to measure generation and JSONL export throughput.
+
 ## Docker
 ```bash
 docker build -t slack-workspace-synth .

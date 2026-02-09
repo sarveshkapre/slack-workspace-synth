@@ -12,9 +12,10 @@
 - Cursor-based API pagination
 - Enterprise Grid seeding guide (Entra SCIM + per-user OAuth + optional bulk import)
 - Slack seeding/provisioning helpers (channel-map, provision-slack, seed-live)
+- Slack API hardening (retry/backoff + safer defaults + richer machine-readable reports)
+- DB safety gates (`validate-db`, fail-fast server startup, read-only DB opens)
+- Performance baselines (local benchmark script + documented workflow)
 
 ## Next
-- Slack API hardening: shared retry/backoff, better reports, and safer defaults for large runs
-- DB safety: schema/metadata validation gates and read-only server open modes
 - Incremental export/import (append-style sync with dedupe keys)
-- Performance baselines (bench scripts + documented targets)
+- Credentialed Slack sandbox smoke run for `channel-map`/`provision-slack`/`seed-live` (optional CI or release checklist)

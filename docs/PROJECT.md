@@ -76,6 +76,6 @@ make release
 ```
 
 ## Next 3 improvements
-1. Add shared Slack API retry/backoff and richer machine-readable reports for safe seeding runs.
-2. Add DB validation and serve-time safety gates (schema/metadata checks, read-only opens).
-3. Add performance baselines (bench scripts + documented targets for large generation/export).
+1. Add a credentialed Slack sandbox smoke run (release checklist or optional CI) for `channel-map`/`provision-slack`/`seed-live`.
+2. Add incremental export modes to pair with append imports (sync only new rows).
+3. Start tracking benchmark baselines over time (targets + regression notes).

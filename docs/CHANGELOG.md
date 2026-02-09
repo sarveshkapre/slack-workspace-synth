@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## Unreleased
+- Added `import-jsonl --mode append` to dedupe by primary key and safely re-import exports into an existing DB.
+- Added `seed-import --zip/--zip-out` to emit a Slack export-style `.zip` bundle for better tool compatibility.
+- Added a local benchmark script + docs (`scripts/bench.py`, `docs/BENCHMARKS.md`) for generation + JSONL export baselines.
 - Hardened `seed-live --dry-run` so it never calls Slack APIs (including DM/MPDM opens and channel-map fetch/create),
   and extended the report with mapping coverage + skip reasons for safer rollout planning.
 - Opened the FastAPI read-only API in SQLite read-only mode and return a clear 400 for missing/invalid DB paths.
