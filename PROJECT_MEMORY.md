@@ -29,7 +29,7 @@
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 24 passed | pass
 - 2026-02-09 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --require-workspace --quiet && swsynth serve --validate-db --require-workspace ... && curl /healthz` | `/healthz` returned `{"status":"ok"}` | pass
-- 2026-02-09 | `gh run list --branch main --workflow ci --limit 3` | Runs `21812467497` and `21812464708` concluded `success` | pass
+- 2026-02-09 | `gh run list --branch main --workflow ci --limit 5` | Runs `21812464708`, `21812467497`, `21812500459` concluded `success` | pass
 
 ## Historical Summary
 - Keep compact summaries of older entries here when file compaction runs.
