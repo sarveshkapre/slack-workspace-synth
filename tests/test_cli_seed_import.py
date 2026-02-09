@@ -49,6 +49,7 @@ def test_seed_import_bundle(tmp_path: Path) -> None:
             str(out_dir),
             "--limit-messages",
             "3",
+            "--validate",
         ],
     )
     assert pack.exit_code == 0, pack.stdout
@@ -110,6 +111,7 @@ def test_seed_import_bundle_zip(tmp_path: Path) -> None:
             "3",
             "--zip-out",
             str(zip_path),
+            "--validate",
         ],
     )
     assert pack.exit_code == 0, pack.stdout

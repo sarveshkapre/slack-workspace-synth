@@ -68,6 +68,59 @@ def _load_json_any(path: str) -> Any:
         return json.load(handle)
 
 
+def _validate_seed_import_bundle(
+    out_dir: Path,
+    *,
+    zip_path: Path | None,
+    messages_written: int,
+) -> None:
+    required_json = [
+        "users.json",
+        "channels.json",
+        "groups.json",
+        "dms.json",
+        "mpims.json",
+        "import_id_map.json",
+        "summary.json",
+    ]
+
+    missing = [name for name in required_json if not (out_dir / name).exists()]
+    if missing:
+        raise ValueError(f"seed-import validation failed: missing {', '.join(missing)}")
+
+    for name in required_json:
+        path = out_dir / name
+        try:
+            _load_json_any(str(path))
+        except Exception as exc:
+            raise ValueError(f"seed-import validation failed: invalid JSON {path}: {exc}") from exc
+
+    if messages_written > 0:
+        conversation_files = [p for p in out_dir.rglob("*.json") if p.parent != out_dir]
+        if not conversation_files:
+            raise ValueError(
+                "seed-import validation failed: expected at least one conversation/day json file"
+            )
+
+    if not zip_path:
+        return
+
+    if not zip_path.exists():
+        raise ValueError(f"seed-import validation failed: zip not found: {zip_path}")
+
+    with zipfile.ZipFile(zip_path) as handle:
+        names = set(handle.namelist())
+
+    missing_in_zip = [name for name in required_json if name not in names]
+    if missing_in_zip:
+        raise ValueError(f"seed-import validation failed: zip missing {', '.join(missing_in_zip)}")
+
+    if messages_written > 0 and not any(name.endswith(".json") and "/" in name for name in names):
+        raise ValueError(
+            "seed-import validation failed: zip missing conversation/day json under subfolders"
+        )
+
+
 _SLACK_TRANSIENT_ERRORS = {"ratelimited", "timeout", "internal_error", "service_unavailable"}
 
 
@@ -988,6 +1041,11 @@ def seed_import(
     zip_bundle: bool = typer.Option(
         False, "--zip", help="Also write a .zip bundle next to the output directory"
     ),
+    validate: bool = typer.Option(
+        False,
+        "--validate",
+        help="Validate required export artifacts exist (and validate zip when used).",
+    ),
 ) -> None:
     """Generate a Slack export-style import bundle from the SQLite DB."""
     store = SQLiteStore(db)
@@ -1214,6 +1272,17 @@ def seed_import(
                     archive.write(path, arcname=path.relative_to(out_dir).as_posix())
 
             typer.echo(f"Wrote import bundle zip to: {resolved_zip_path}")
+
+        if validate:
+            try:
+                _validate_seed_import_bundle(
+                    out_dir,
+                    zip_path=resolved_zip_path,
+                    messages_written=messages_written,
+                )
+            except ValueError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1) from exc
 
         typer.echo(f"Wrote import bundle to: {out_dir}")
     finally:
