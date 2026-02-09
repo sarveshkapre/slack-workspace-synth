@@ -904,6 +904,16 @@ def export_jsonl(
     ),
     compress: bool = typer.Option(False, help="Gzip JSONL outputs"),
     chunk_size: int = typer.Option(2000, help="SQLite fetch chunk size"),
+    messages_after_ts: int | None = typer.Option(
+        None,
+        "--messages-after-ts",
+        help="Only export messages with ts > this UNIX timestamp (seconds).",
+    ),
+    files_after_ts: int | None = typer.Option(
+        None,
+        "--files-after-ts",
+        help="Only export files with created_ts > this UNIX timestamp (seconds).",
+    ),
 ) -> None:
     """Export a workspace to JSON + JSONL files (streaming)."""
     store = SQLiteStore(db)
@@ -940,12 +950,20 @@ def export_jsonl(
         )
         dump_jsonl(
             str(out_dir / f"messages{suffix}"),
-            store.iter_messages(resolved_workspace_id, chunk_size=chunk_size),
+            store.iter_messages(
+                resolved_workspace_id,
+                chunk_size=chunk_size,
+                after_ts=messages_after_ts,
+            ),
             compress=compress,
         )
         dump_jsonl(
             str(out_dir / f"files{suffix}"),
-            store.iter_files(resolved_workspace_id, chunk_size=chunk_size),
+            store.iter_files(
+                resolved_workspace_id,
+                chunk_size=chunk_size,
+                after_ts=files_after_ts,
+            ),
             compress=compress,
         )
 

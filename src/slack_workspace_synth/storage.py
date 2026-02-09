@@ -474,11 +474,20 @@ class SQLiteStore:
         )
 
     def iter_messages(
-        self, workspace_id: str, *, chunk_size: int = 1000
+        self,
+        workspace_id: str,
+        *,
+        chunk_size: int = 1000,
+        after_ts: int | None = None,
     ) -> Iterable[dict[str, object]]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+        if after_ts is not None:
+            where.append("ts > ?")
+            params.append(after_ts)
         yield from self._iter_query(
-            "SELECT * FROM messages WHERE workspace_id = ? ORDER BY ts DESC, id DESC",
-            (workspace_id,),
+            f"SELECT * FROM messages WHERE {' AND '.join(where)} ORDER BY ts DESC, id DESC",
+            tuple(params),
             chunk_size=chunk_size,
         )
 
@@ -501,11 +510,20 @@ class SQLiteStore:
         )
 
     def iter_files(
-        self, workspace_id: str, *, chunk_size: int = 1000
+        self,
+        workspace_id: str,
+        *,
+        chunk_size: int = 1000,
+        after_ts: int | None = None,
     ) -> Iterable[dict[str, object]]:
+        where = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+        if after_ts is not None:
+            where.append("created_ts > ?")
+            params.append(after_ts)
         yield from self._iter_query(
-            "SELECT * FROM files WHERE workspace_id = ? ORDER BY created_ts DESC, id DESC",
-            (workspace_id,),
+            f"SELECT * FROM files WHERE {' AND '.join(where)} ORDER BY created_ts DESC, id DESC",
+            tuple(params),
             chunk_size=chunk_size,
         )
 
