@@ -35,6 +35,8 @@
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 27 passed; build artifacts produced | pass
 - 2026-02-09 | `swsynth generate ... && swsynth seed-live --dry-run --slack-channels ... && SWSYNTH_DB=... uvicorn ... && curl /healthz && curl /workspaces` | `seed-live` report included `skipped_requires_slack` for DM/MPDM; `/workspaces` returned JSON | pass
 - 2026-02-09 | `gh run watch 21825469379 --exit-status` | CI run `21825469379` concluded `success` | pass
+- 2026-02-09 | `gh run watch 21825572971 --exit-status` | CI run `21825572971` concluded `success` | pass
+- 2026-02-09 | `gh run watch 21825577315 --exit-status` | CI run `21825577315` concluded `success` | pass
 
 ## Historical Summary
 - Keep compact summaries of older entries here when file compaction runs.
