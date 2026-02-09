@@ -669,6 +669,8 @@ _REQUIRED_TABLES: dict[str, set[str]] = {
     },
 }
 
+SCHEMA_VERSION = 1
+
 
 def _sqlite_connect_readonly(path: str) -> sqlite3.Connection:
     # Use read-only mode so validation doesn't mutate unknown DBs.
@@ -685,7 +687,13 @@ def _parse_semver(value: object) -> tuple[int, int, int] | None:
     return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
-def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, object]:
+def validate_db(
+    path: str,
+    *,
+    workspace_id: str | None = None,
+    require_workspace: bool = False,
+    tool_version: str | None = None,
+) -> dict[str, object]:
     """Validate that a SQLite DB appears compatible with slack-workspace-synth.
 
     This is a read-only check meant for fail-fast CLI diagnostics.
@@ -698,6 +706,8 @@ def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, obje
         "errors": [],
         "warnings": [],
         "meta": {},
+        "tool_version": tool_version,
+        "required_schema_version": SCHEMA_VERSION,
     }
     errors: list[str] = cast(list[str], report["errors"])
     warnings: list[str] = cast(list[str], report["warnings"])
@@ -736,7 +746,7 @@ def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, obje
             if missing:
                 errors.append(f"Table {table} missing columns: {', '.join(missing)}")
 
-        # Optional workspace meta inspection for quick operator context.
+        # Optional workspace/meta inspection for quick operator context.
         if "workspaces" in tables and "workspace_meta" in tables:
             resolved_workspace = workspace_id
             if not resolved_workspace:
@@ -745,6 +755,16 @@ def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, obje
                 ).fetchone()
                 resolved_workspace = str(row["id"]) if row else None
             report["workspace_id"] = resolved_workspace
+
+            if workspace_id:
+                exists = conn.execute(
+                    "SELECT 1 FROM workspaces WHERE id = ? LIMIT 1", (workspace_id,)
+                ).fetchone()
+                if not exists:
+                    errors.append(f"Workspace not found: {workspace_id}")
+
+            if require_workspace and not resolved_workspace:
+                errors.append("No workspaces found in DB.")
 
             if resolved_workspace:
                 meta_rows = conn.execute(
@@ -764,6 +784,32 @@ def validate_db(path: str, *, workspace_id: str | None = None) -> dict[str, obje
                 generator = meta.get("generator")
                 if generator and generator != "slack-workspace-synth":
                     warnings.append(f"Unexpected generator meta: {generator!r}")
+
+                generator_version = meta.get("generator_version")
+                if not generator_version:
+                    warnings.append("Missing workspace_meta generator_version.")
+                else:
+                    parsed_gen = _parse_semver(generator_version)
+                    parsed_tool = _parse_semver(tool_version) if tool_version else None
+                    if parsed_gen and parsed_tool and parsed_gen > parsed_tool:
+                        warnings.append(
+                            "DB generator_version appears newer than this tool; "
+                            "consider upgrading slack-workspace-synth."
+                        )
+
+                schema_version = meta.get("schema_version")
+                if schema_version is None:
+                    warnings.append("Missing workspace_meta schema_version (older DB export?).")
+                elif isinstance(schema_version, int):
+                    if schema_version > SCHEMA_VERSION:
+                        errors.append(
+                            f"DB schema_version {schema_version} is newer than supported "
+                            f"{SCHEMA_VERSION}."
+                        )
+                else:
+                    warnings.append(
+                        f"Unrecognized schema_version type: {type(schema_version).__name__}"
+                    )
     finally:
         conn.close()
 

@@ -3,12 +3,13 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import random
 import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -26,7 +27,7 @@ from .generator import (
 )
 from .models import Channel, ChannelMember, File, Message, User, Workspace
 from .plugins import PluginRegistry, load_plugins
-from .storage import SQLiteStore, dump_json, dump_jsonl, load_jsonl
+from .storage import SCHEMA_VERSION, SQLiteStore, dump_json, dump_jsonl, load_jsonl, validate_db
 
 app = typer.Typer(add_completion=False)
 
@@ -66,31 +67,124 @@ def _load_json_any(path: str) -> Any:
         return json.load(handle)
 
 
-def _slack_post_json(token: str, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+_SLACK_TRANSIENT_ERRORS = {"ratelimited", "timeout", "internal_error", "service_unavailable"}
+
+
+def _slack_sleep_with_backoff(attempt: int, *, max_backoff_seconds: int) -> None:
+    if max_backoff_seconds <= 0:
+        return
+    base = 0.5 * (2**attempt)
+    # Jitter in [0.5, 1.0] keeps concurrent seeders from syncing retries.
+    delay = min(float(max_backoff_seconds), base) * (0.5 + 0.5 * random.random())
+    time.sleep(delay)
+
+
+def _slack_request_json(
+    token: str,
+    request: Request,
+    *,
+    max_retries: int,
+    timeout_seconds: int,
+    max_backoff_seconds: int,
+) -> dict[str, Any]:
+    attempts = max(0, max_retries) + 1
+    last_exc: Exception | None = None
+
+    for attempt in range(attempts):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                data = response.read().decode("utf-8")
+        except HTTPError as exc:
+            last_exc = exc
+            body = ""
+            try:
+                body = exc.read().decode("utf-8")
+            except Exception:
+                body = ""
+
+            if exc.code == 429 and attempt < attempts - 1:
+                retry_after_raw = exc.headers.get("Retry-After", "1")
+                try:
+                    retry_after = max(0, int(retry_after_raw))
+                except ValueError:
+                    retry_after = 1
+                time.sleep(retry_after)
+                continue
+
+            if exc.code in {408} or 500 <= exc.code <= 599:
+                if attempt < attempts - 1:
+                    _slack_sleep_with_backoff(attempt, max_backoff_seconds=max_backoff_seconds)
+                    continue
+
+            snippet = body[:200] if body else str(exc)[:200]
+            raise RuntimeError(f"Slack HTTP {exc.code} for {request.full_url}: {snippet}") from exc
+        except URLError as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                _slack_sleep_with_backoff(attempt, max_backoff_seconds=max_backoff_seconds)
+                continue
+            raise RuntimeError(f"Slack request failed for {request.full_url}: {exc}") from exc
+
+        parsed = json.loads(data)
+        if not isinstance(parsed, dict):
+            raise RuntimeError(f"Unexpected Slack response: {data[:200]}")
+
+        if (
+            parsed.get("ok") is False
+            and str(parsed.get("error") or "") in _SLACK_TRANSIENT_ERRORS
+            and attempt < attempts - 1
+        ):
+            _slack_sleep_with_backoff(attempt, max_backoff_seconds=max_backoff_seconds)
+            continue
+
+        return parsed
+
+    raise RuntimeError(f"Slack request failed after {attempts} attempts: {last_exc}")
+
+
+def _slack_post_json(
+    token: str,
+    url: str,
+    payload: dict[str, Any],
+    *,
+    max_retries: int = 6,
+    timeout_seconds: int = 30,
+    max_backoff_seconds: int = 30,
+) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, method="POST")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     request.add_header("Content-Type", "application/json; charset=utf-8")
-    with urlopen(request, timeout=30) as response:
-        data = response.read().decode("utf-8")
-    parsed = json.loads(data)
-    if not isinstance(parsed, dict):
-        raise RuntimeError(f"Unexpected Slack response: {data[:200]}")
-    return parsed
+    return _slack_request_json(
+        token,
+        request,
+        max_retries=max_retries,
+        timeout_seconds=timeout_seconds,
+        max_backoff_seconds=max_backoff_seconds,
+    )
 
 
-def _slack_get_json(token: str, url: str, params: dict[str, str]) -> dict[str, Any]:
+def _slack_get_json(
+    token: str,
+    url: str,
+    params: dict[str, str],
+    *,
+    max_retries: int = 6,
+    timeout_seconds: int = 30,
+    max_backoff_seconds: int = 30,
+) -> dict[str, Any]:
     query = urlencode(params)
     request = Request(f"{url}?{query}", method="GET")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
-    with urlopen(request, timeout=30) as response:
-        data = response.read().decode("utf-8")
-    parsed = json.loads(data)
-    if not isinstance(parsed, dict):
-        raise RuntimeError(f"Unexpected Slack response: {data[:200]}")
-    return parsed
+    return _slack_request_json(
+        token,
+        request,
+        max_retries=max_retries,
+        timeout_seconds=timeout_seconds,
+        max_backoff_seconds=max_backoff_seconds,
+    )
 
 
 def _load_slack_channels_payload(path: str) -> list[dict[str, Any]]:
@@ -112,6 +206,9 @@ def _collect_slack_channels(
     base_url: str,
     team_id: str | None,
     limit: int | None,
+    slack_max_retries: int,
+    slack_timeout_seconds: int,
+    slack_max_backoff_seconds: int,
 ) -> list[dict[str, Any]]:
     if slack_channels:
         return _load_slack_channels_payload(slack_channels)
@@ -129,7 +226,14 @@ def _collect_slack_channels(
             params["cursor"] = cursor
         if team_id:
             params["team_id"] = team_id
-        response = _slack_get_json(slack_token, f"{base_url}/conversations.list", params)
+        response = _slack_get_json(
+            slack_token,
+            f"{base_url}/conversations.list",
+            params,
+            max_retries=slack_max_retries,
+            timeout_seconds=slack_timeout_seconds,
+            max_backoff_seconds=slack_max_backoff_seconds,
+        )
         if not response.get("ok"):
             raise RuntimeError(f"conversations.list failed: {response}")
         batch = response.get("channels")
@@ -157,6 +261,9 @@ def _generate_channel_map(
     base_url: str,
     team_id: str | None,
     limit: int | None,
+    slack_max_retries: int,
+    slack_timeout_seconds: int,
+    slack_max_backoff_seconds: int,
 ) -> tuple[dict[str, str], list[dict[str, object]]]:
     slack_entries = _collect_slack_channels(
         slack_token=slack_token,
@@ -165,6 +272,9 @@ def _generate_channel_map(
         base_url=base_url,
         team_id=team_id,
         limit=limit,
+        slack_max_retries=slack_max_retries,
+        slack_timeout_seconds=slack_timeout_seconds,
+        slack_max_backoff_seconds=slack_max_backoff_seconds,
     )
     slack_by_name = {
         str(entry.get("name")): entry
@@ -189,7 +299,14 @@ def _generate_channel_map(
         for channel in missing:
             name = str(channel["name"])
             payload = {"name": name, "is_private": bool(channel["is_private"])}
-            response = _slack_post_json(slack_token, f"{base_url}/conversations.create", payload)
+            response = _slack_post_json(
+                slack_token,
+                f"{base_url}/conversations.create",
+                payload,
+                max_retries=slack_max_retries,
+                timeout_seconds=slack_timeout_seconds,
+                max_backoff_seconds=slack_max_backoff_seconds,
+            )
             if not response.get("ok"):
                 raise RuntimeError(f"conversations.create failed: {response}")
             channel_id = str(response["channel"]["id"])
@@ -430,6 +547,7 @@ def generate(
             {
                 "generator": "slack-workspace-synth",
                 "generator_version": _PKG_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "seed": seed,
                 "requested": {
                     "users": resolved_users,
@@ -696,11 +814,25 @@ def serve(
     db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
     host: str = typer.Option("127.0.0.1", help="Host"),
     port: int = typer.Option(8080, help="Port"),
+    validate_db_before_start: bool = typer.Option(
+        False, "--validate-db", help="Validate DB compatibility before starting server"
+    ),
+    require_workspace: bool = typer.Option(
+        False, help="Fail validation when DB contains no workspaces"
+    ),
 ) -> None:
     """Run the FastAPI server."""
     import os
 
     import uvicorn
+
+    if validate_db_before_start:
+        report = validate_db(
+            db, workspace_id=None, require_workspace=require_workspace, tool_version=_PKG_VERSION
+        )
+        if not report.get("ok"):
+            typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+            raise typer.Exit(code=1)
 
     os.environ["SWSYNTH_DB"] = db
     uvicorn.run(
@@ -710,6 +842,33 @@ def serve(
         reload=False,
         factory=False,
     )
+
+
+@app.command("validate-db")
+def validate_db_cmd(
+    db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),
+    workspace_id: str | None = typer.Option(
+        None, help="Workspace id (defaults to most recently created workspace)"
+    ),
+    require_workspace: bool = typer.Option(
+        False, help="Fail validation when DB contains no workspaces"
+    ),
+    out: str | None = typer.Option(None, help="Write validation report JSON path"),
+    quiet: bool = typer.Option(False, help="Do not print report JSON to stdout"),
+) -> None:
+    """Validate that a SQLite DB appears compatible with slack-workspace-synth."""
+    report = validate_db(
+        db,
+        workspace_id=workspace_id,
+        require_workspace=require_workspace,
+        tool_version=_PKG_VERSION,
+    )
+    if out:
+        dump_json(out, report)
+    if not quiet:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+    if not report.get("ok"):
+        raise typer.Exit(code=1)
 
 
 @app.command("export-jsonl")
@@ -1129,6 +1288,9 @@ def seed_live(
     limit_messages: int | None = typer.Option(None, help="Limit number of messages to post"),
     dry_run: bool = typer.Option(True, help="Do not call Slack APIs"),
     base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    slack_max_retries: int = typer.Option(6, help="Max retries for Slack API calls"),
+    slack_timeout_seconds: int = typer.Option(30, help="Slack API request timeout (seconds)"),
+    slack_max_backoff_seconds: int = typer.Option(30, help="Max retry backoff delay (seconds)"),
     min_delay_ms: int = typer.Option(200, help="Delay between posts in ms"),
     continue_on_error: bool = typer.Option(True, help="Continue on Slack errors"),
 ) -> None:
@@ -1170,6 +1332,9 @@ def seed_live(
                 base_url=base_url,
                 team_id=team_id,
                 limit=limit_channels,
+                slack_max_retries=slack_max_retries,
+                slack_timeout_seconds=slack_timeout_seconds,
+                slack_max_backoff_seconds=slack_max_backoff_seconds,
             )
             if missing and not create_missing:
                 missing_names = ", ".join(str(ch["name"]) for ch in missing[:10])
@@ -1213,7 +1378,14 @@ def seed_live(
             if len(slack_users) < 2:
                 return None
             payload = {"users": ",".join(sorted(set(slack_users)))}
-            response = _slack_post_json(author_token, f"{base_url}/conversations.open", payload)
+            response = _slack_post_json(
+                author_token,
+                f"{base_url}/conversations.open",
+                payload,
+                max_retries=slack_max_retries,
+                timeout_seconds=slack_timeout_seconds,
+                max_backoff_seconds=slack_max_backoff_seconds,
+            )
             if not response.get("ok"):
                 raise RuntimeError(f"conversations.open failed: {response}")
             channel_id = str(response["channel"]["id"])
@@ -1265,36 +1437,21 @@ def seed_live(
                     token_entry["access_token"],
                     f"{base_url}/chat.postMessage",
                     payload,
+                    max_retries=slack_max_retries,
+                    timeout_seconds=slack_timeout_seconds,
+                    max_backoff_seconds=slack_max_backoff_seconds,
                 )
-            except HTTPError as exc:
-                if exc.code == 429:
-                    retry_after = int(exc.headers.get("Retry-After", "1"))
-                    time.sleep(retry_after)
-                    response = _slack_post_json(
-                        token_entry["access_token"],
-                        f"{base_url}/chat.postMessage",
-                        payload,
-                    )
-                else:
-                    stats["errors"] += 1
-                    if not continue_on_error:
-                        raise
-                    continue
+            except RuntimeError:
+                stats["errors"] += 1
+                if not continue_on_error:
+                    raise
+                continue
 
             if not response.get("ok"):
-                error = response.get("error")
-                if error == "ratelimited":
-                    time.sleep(1)
-                    response = _slack_post_json(
-                        token_entry["access_token"],
-                        f"{base_url}/chat.postMessage",
-                        payload,
-                    )
-                if not response.get("ok"):
-                    stats["errors"] += 1
-                    if not continue_on_error:
-                        raise RuntimeError(f"chat.postMessage failed: {response}")
-                    continue
+                stats["errors"] += 1
+                if not continue_on_error:
+                    raise RuntimeError(f"chat.postMessage failed: {response}")
+                continue
 
             stats["posted"] += 1
             if delay:
@@ -1327,6 +1484,9 @@ def channel_map(
     include_private: bool = typer.Option(True, help="Include private channels"),
     create_missing: bool = typer.Option(False, help="Create missing channels via Slack API"),
     base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    slack_max_retries: int = typer.Option(6, help="Max retries for Slack API calls"),
+    slack_timeout_seconds: int = typer.Option(30, help="Slack API request timeout (seconds)"),
+    slack_max_backoff_seconds: int = typer.Option(30, help="Max retry backoff delay (seconds)"),
     team_id: str | None = typer.Option(None, help="Enterprise Grid team/workspace id"),
     limit: int | None = typer.Option(None, help="Limit number of Slack channels to fetch"),
 ) -> None:
@@ -1357,6 +1517,9 @@ def channel_map(
             base_url=base_url,
             team_id=team_id,
             limit=limit,
+            slack_max_retries=slack_max_retries,
+            slack_timeout_seconds=slack_timeout_seconds,
+            slack_max_backoff_seconds=slack_max_backoff_seconds,
         )
         if missing and not create_missing:
             missing_names = ", ".join(str(ch["name"]) for ch in missing[:10])
@@ -1392,6 +1555,9 @@ def provision_slack(
     dry_run: bool = typer.Option(False, help="Do not call Slack APIs"),
     report: str | None = typer.Option(None, help="Write provisioning report JSON path"),
     base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    slack_max_retries: int = typer.Option(6, help="Max retries for Slack API calls"),
+    slack_timeout_seconds: int = typer.Option(30, help="Slack API request timeout (seconds)"),
+    slack_max_backoff_seconds: int = typer.Option(30, help="Max retry backoff delay (seconds)"),
     team_id: str | None = typer.Option(None, help="Enterprise Grid team/workspace id"),
     limit_channels: int | None = typer.Option(None, help="Limit Slack channels to fetch"),
 ) -> None:
@@ -1428,6 +1594,9 @@ def provision_slack(
             base_url=base_url,
             team_id=team_id,
             limit=limit_channels,
+            slack_max_retries=slack_max_retries,
+            slack_timeout_seconds=slack_timeout_seconds,
+            slack_max_backoff_seconds=slack_max_backoff_seconds,
         )
 
         if missing and not create_effective and not allow_missing:
@@ -1479,32 +1648,24 @@ def provision_slack(
                     payload = {"channel": slack_channel_id, "users": ",".join(batch)}
                     try:
                         response = _slack_post_json(
-                            str(slack_token), f"{base_url}/conversations.invite", payload
+                            str(slack_token),
+                            f"{base_url}/conversations.invite",
+                            payload,
+                            max_retries=slack_max_retries,
+                            timeout_seconds=slack_timeout_seconds,
+                            max_backoff_seconds=slack_max_backoff_seconds,
                         )
-                    except HTTPError as exc:
-                        if exc.code == 429:
-                            retry_after = int(exc.headers.get("Retry-After", "1"))
-                            time.sleep(retry_after)
-                            response = _slack_post_json(
-                                str(slack_token), f"{base_url}/conversations.invite", payload
-                            )
-                        else:
-                            stats["invite_errors"] += 1
-                            continue
+                    except RuntimeError:
+                        stats["invite_errors"] += 1
+                        continue
 
                     if not response.get("ok"):
                         error = response.get("error")
                         if error in {"already_in_channel", "cant_invite_self"}:
                             stats["invites_sent"] += len(batch)
                             continue
-                        if error == "ratelimited":
-                            time.sleep(1)
-                            response = _slack_post_json(
-                                str(slack_token), f"{base_url}/conversations.invite", payload
-                            )
-                        if not response.get("ok"):
-                            stats["invite_errors"] += 1
-                            continue
+                        stats["invite_errors"] += 1
+                        continue
                     stats["invites_sent"] += len(batch)
 
         if report:
