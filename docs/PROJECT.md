@@ -33,6 +33,11 @@ swsynth export-jsonl --db ./data/acme.db --out ./export
 . .venv/bin/activate
 swsynth import-jsonl --source ./export --db ./data/imported.db
 ```
+Append/dedupe into an existing DB:
+```bash
+. .venv/bin/activate
+swsynth import-jsonl --source ./export --db ./data/imported.db --mode append
+```
 
 ## Stats
 ```bash

@@ -89,6 +89,11 @@ Import from JSONL:
 . .venv/bin/activate
 swsynth import-jsonl --source ./export --db ./data/imported.db
 ```
+To append into an existing DB (dedupe by primary key):
+```bash
+. .venv/bin/activate
+swsynth import-jsonl --source ./export --db ./data/imported.db --mode append
+```
 
 Quick stats:
 ```bash

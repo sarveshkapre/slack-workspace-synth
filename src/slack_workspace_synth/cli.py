@@ -620,8 +620,21 @@ def import_jsonl(
     ),
     force: bool = typer.Option(False, help="Overwrite existing DB"),
     batch_size: int = typer.Option(1000, help="Insert batch size"),
+    mode: str = typer.Option(
+        "fresh",
+        help=(
+            "Import mode: fresh (new DB/workspace) or append "
+            "(dedupe into existing DB by primary key)"
+        ),
+    ),
 ) -> None:
     """Import JSONL export directory into SQLite."""
+    mode = mode.strip().lower()
+    if mode not in {"fresh", "append"}:
+        raise typer.BadParameter("mode must be one of: fresh, append")
+    if mode == "append" and force:
+        raise typer.BadParameter("Cannot use --force with --mode append.")
+
     source_path = Path(source)
     if not source_path.exists():
         raise typer.BadParameter(f"Export directory not found: {source}")
@@ -666,7 +679,17 @@ def import_jsonl(
 
     store = SQLiteStore(db)
     try:
-        store.insert_workspace(workspace_obj)
+        ignore = mode == "append"
+        existing_workspace = store.get_workspace(workspace_obj.id)
+        if existing_workspace:
+            # In append mode, refuse to merge different workspaces into the same id.
+            existing_name = str(existing_workspace.get("name") or "")
+            if existing_name and existing_name != workspace_obj.name:
+                raise typer.BadParameter(
+                    "Workspace id already exists with a different name; "
+                    "use a fresh DB or choose a different export/workspace-id."
+                )
+        store.insert_workspace(workspace_obj, ignore=ignore)
         if meta:
             store.set_workspace_meta(workspace_obj.id, meta)
 
@@ -701,10 +724,10 @@ def import_jsonl(
                     )
                 )
                 if len(buffer) >= batch_size:
-                    store.insert_users(buffer)
+                    store.insert_users(buffer, ignore=ignore)
                     buffer = []
             if buffer:
-                store.insert_users(buffer)
+                store.insert_users(buffer, ignore=ignore)
 
         def _import_channels(path: Path) -> None:
             buffer: list[Channel] = []
@@ -721,10 +744,10 @@ def import_jsonl(
                     )
                 )
                 if len(buffer) >= batch_size:
-                    store.insert_channels(buffer)
+                    store.insert_channels(buffer, ignore=ignore)
                     buffer = []
             if buffer:
-                store.insert_channels(buffer)
+                store.insert_channels(buffer, ignore=ignore)
 
         def _import_channel_members(path: Path) -> None:
             if not path.exists():
@@ -763,10 +786,10 @@ def import_jsonl(
                     )
                 )
                 if len(buffer) >= batch_size:
-                    store.insert_messages(buffer)
+                    store.insert_messages(buffer, ignore=ignore)
                     buffer = []
             if buffer:
-                store.insert_messages(buffer)
+                store.insert_messages(buffer, ignore=ignore)
 
         def _import_files(path: Path) -> None:
             buffer: list[File] = []
@@ -787,10 +810,10 @@ def import_jsonl(
                     )
                 )
                 if len(buffer) >= batch_size:
-                    store.insert_files(buffer)
+                    store.insert_files(buffer, ignore=ignore)
                     buffer = []
             if buffer:
-                store.insert_files(buffer)
+                store.insert_files(buffer, ignore=ignore)
 
         def _pick(path: Path, stem: str) -> Path:
             gz = path / f"{stem}.jsonl.gz"

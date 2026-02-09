@@ -146,31 +146,34 @@ class SQLiteStore:
     def close(self) -> None:
         self.conn.close()
 
-    def insert_workspace(self, workspace: Workspace) -> None:
+    def insert_workspace(self, workspace: Workspace, *, ignore: bool = False) -> None:
+        verb = "INSERT OR IGNORE" if ignore else "INSERT"
         self.conn.execute(
-            "INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
+            f"{verb} INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
             (workspace.id, workspace.name, workspace.created_at),
         )
         self.conn.commit()
 
-    def insert_users(self, users: Iterable[User]) -> None:
+    def insert_users(self, users: Iterable[User], *, ignore: bool = False) -> None:
         rows = [(u.id, u.workspace_id, u.name, u.email, u.title, u.is_bot) for u in users]
+        verb = "INSERT OR IGNORE" if ignore else "INSERT"
         self.conn.executemany(
             (
-                "INSERT INTO users (id, workspace_id, name, email, title, is_bot) "
+                f"{verb} INTO users (id, workspace_id, name, email, title, is_bot) "
                 "VALUES (?, ?, ?, ?, ?, ?)"
             ),
             rows,
         )
         self.conn.commit()
 
-    def insert_channels(self, channels: Iterable[Channel]) -> None:
+    def insert_channels(self, channels: Iterable[Channel], *, ignore: bool = False) -> None:
         rows = [
             (c.id, c.workspace_id, c.name, c.is_private, c.channel_type, c.topic) for c in channels
         ]
+        verb = "INSERT OR IGNORE" if ignore else "INSERT"
         self.conn.executemany(
             (
-                "INSERT INTO channels (id, workspace_id, name, is_private, channel_type, topic) "
+                f"{verb} INTO channels (id, workspace_id, name, is_private, channel_type, topic) "
                 "VALUES (?, ?, ?, ?, ?, ?)"
             ),
             rows,
@@ -188,7 +191,7 @@ class SQLiteStore:
         )
         self.conn.commit()
 
-    def insert_messages(self, messages: Iterable[Message]) -> None:
+    def insert_messages(self, messages: Iterable[Message], *, ignore: bool = False) -> None:
         rows = [
             (
                 m.id,
@@ -203,9 +206,10 @@ class SQLiteStore:
             )
             for m in messages
         ]
+        verb = "INSERT OR IGNORE" if ignore else "INSERT"
         self.conn.executemany(
             (
-                "INSERT INTO messages "
+                f"{verb} INTO messages "
                 "(id, workspace_id, channel_id, user_id, ts, text, thread_ts, reply_count, "
                 "reactions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
@@ -213,7 +217,7 @@ class SQLiteStore:
         )
         self.conn.commit()
 
-    def insert_files(self, files: Iterable[File]) -> None:
+    def insert_files(self, files: Iterable[File], *, ignore: bool = False) -> None:
         rows = [
             (
                 f.id,
@@ -229,9 +233,10 @@ class SQLiteStore:
             )
             for f in files
         ]
+        verb = "INSERT OR IGNORE" if ignore else "INSERT"
         self.conn.executemany(
             (
-                "INSERT INTO files "
+                f"{verb} INTO files "
                 "(id, workspace_id, user_id, name, size, mimetype, created_ts, channel_id, "
                 "message_id, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
