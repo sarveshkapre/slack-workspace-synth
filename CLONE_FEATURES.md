@@ -12,10 +12,16 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 ### Backlog
 - [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
 - [ ] P2 (3|4|3|3|3|2): Add incremental export mode to pair with append imports (sync only new rows using cursors/timestamps).
-- [ ] P3 (2|2|3|2|1|3): Add `export-jsonl` incremental filters for messages/files (e.g. `--after-ts`) to reduce transfer size for append-style workflows.
-- [ ] P3 (2|2|3|2|2|3): Add `seed-import` output validation (`--validate`) to assert required files/folders exist before returning success.
+- [ ] P3 (2|1|3|2|1|4): Add `make clean` to remove local build/test artifacts (`dist/`, `build/`, caches, `*.egg-info`) without touching user data.
 
 ## Implemented
+- [x] 2026-02-09: Added incremental JSONL export filters for messages/files via `export-jsonl --messages-after-ts` and
+  `--files-after-ts` (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`,
+  `tests/test_cli_export_jsonl_filters.py`) (commit `c1759c7`).
+- [x] 2026-02-09: Added `seed-import --validate` to ensure required export artifacts exist (and validate the zip when
+  produced) (`src/slack_workspace_synth/cli.py`, `tests/test_cli_seed_import.py`) (commit `fe6c4bd`).
+- [x] 2026-02-09: Aligned package versioning and changelog (bumped to `0.1.3`, cut a `v0.1.3` changelog section)
+  (`pyproject.toml`, `src/slack_workspace_synth/__init__.py`, `docs/CHANGELOG.md`) (commit `56aa2ce`).
 - [x] 2026-02-09: Added `import-jsonl --mode append` to dedupe by primary key when importing into an existing DB
   (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`, `tests/test_cli_import.py`)
   (commit `e24ac6a`).

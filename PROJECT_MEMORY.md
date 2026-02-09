@@ -9,6 +9,9 @@
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
+- 2026-02-09 | Add `export-jsonl --messages-after-ts/--files-after-ts` filters for incremental exports | Supports append-style sync workflows by letting operators export only newer messages/files without rewriting full JSONL sets | `make check` (30 passed) + CLI smoke verified filtered JSONL files can be empty and still write correctly | c1759c7 | high | trusted
+- 2026-02-09 | Add `seed-import --validate` to validate on-disk (and optional zip) import bundle artifacts | Makes bulk import workflows safer by failing fast when required artifacts are missing or malformed | `make check` (30 passed) + CLI smoke `seed-import --zip-out ... --validate` succeeded | fe6c4bd | high | trusted
+- 2026-02-09 | Align package versioning + changelog to `0.1.3` | Eliminates version skew between `pyproject.toml` and `slack_workspace_synth.__version__`, and makes built artifacts match documented release notes | `make check` built `slack_workspace_synth-0.1.3*` artifacts successfully | 56aa2ce | high | trusted
 - 2026-02-09 | Add `import-jsonl --mode append` to dedupe by primary key when importing into an existing DB | Enables repeatable export/import workflows without DB rebuilds; makes it safe to re-run imports and supports append-style sync patterns | `make check` (29 passed) + `tests/test_cli_import.py` + local smoke import + append import | e24ac6a | high | trusted
 - 2026-02-09 | Add `seed-import --zip/--zip-out` to emit Slack export-style `.zip` bundles | Many adjacent tools consume Slack exports as zips; emitting a zip improves interoperability for viewer and migration test workflows | `make check` (29 passed) + `tests/test_cli_seed_import.py` + local smoke created `import_bundle.zip` | 0833cef | high | trusted
 - 2026-02-09 | Add local benchmark script + docs (`scripts/bench.py`, `docs/BENCHMARKS.md`) and update roadmap | Benchmarks help catch perf regressions and set operator expectations; roadmap should reflect shipped baseline tooling | `make check` (29 passed) + local smoke ran `python scripts/bench.py --profile quick` and wrote `report.json` | 566aa4e | medium | trusted
@@ -33,6 +36,11 @@
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
+- 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 30 passed; build produced `slack_workspace_synth-0.1.3*` artifacts | pass
+- 2026-02-09 | `swsynth generate ... && swsynth export-jsonl --messages-after-ts <max_ts> --files-after-ts <max_ts> && swsynth seed-import --zip-out ... --validate` | Export wrote empty filtered `messages.jsonl`/`files.jsonl`; seed-import validated + wrote zip | pass
+- 2026-02-09 | `gh run watch 21842776442 --exit-status` | CI concluded `success` for commit `c1759c7` | pass
+- 2026-02-09 | `gh run watch 21842856318 --exit-status` | CI concluded `success` for commit `fe6c4bd` | pass
+- 2026-02-09 | `gh run watch 21842931635 --exit-status` | CI concluded `success` for commit `56aa2ce` | pass
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 24 passed | pass
 - 2026-02-09 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --require-workspace --quiet && swsynth serve --validate-db --require-workspace ... && curl /healthz` | `/healthz` returned `{"status":"ok"}` | pass
 - 2026-02-09 | `gh run list --branch main --workflow ci --limit 5` | Runs `21812464708`, `21812467497`, `21812500459` concluded `success` | pass
