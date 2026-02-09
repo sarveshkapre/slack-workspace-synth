@@ -7,14 +7,20 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] P1: Add `swsynth validate-db` command to fail fast on incompatible SQLite schema/version metadata before API/CLI operations.
-- [ ] P1: Add shared Slack API retry/backoff helper (429 `Retry-After`, `ratelimited`, transient 5xx/network errors) and wire it into `seed-live`, `channel-map`, and `provision-slack`.
-- [ ] P1: Add richer `seed-live --report` dry-run planning details (breakdowns by channel type and skip reasons) for safer live rollout review.
-- [ ] P1: Add focused regression tests for DB validation and Slack retry/report behavior.
-- [ ] P2: Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
-- [ ] P2: Add incremental export/import mode with dedupe keys for append-style sync workflows.
-- [ ] P3: Add API startup DB compatibility gate and optional read-only DB mode for serve-time safety.
-- [ ] P3: Add performance benchmark script + docs for large workspace generation/export baselines.
+Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
+
+### Selected (Cycle 1, 2026-02-09)
+- [ ] P1 (5|2|5|3|2|4): Add shared Slack API retry/backoff helper (429 `Retry-After`, `ratelimited`, transient 5xx/network errors) and wire it into `seed-live`, `channel-map`, and `provision-slack`.
+- [ ] P1 (4|2|5|2|2|4): Add `swsynth validate-db` command to fail fast on incompatible SQLite schema/metadata; add `serve --validate-db` option to prevent accidental empty DB creation when pointing at the wrong path.
+- [ ] P1 (4|2|5|2|2|4): Add focused regression tests for DB validation and Slack retry/backoff behavior.
+- [ ] P2 (3|1|4|1|1|5): Refresh docs that are now stale (notably `docs/ROADMAP.md` and `docs/PROJECT.md`) so “Next” items reflect the current shipped feature set.
+
+### Backlog
+- [ ] P1 (4|2|4|2|2|3): Add richer `seed-live --report` dry-run planning details (breakdowns by channel type and skip reasons) for safer live rollout review.
+- [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
+- [ ] P2 (3|4|3|3|3|2): Add incremental export/import mode with dedupe keys for append-style sync workflows.
+- [ ] P3 (3|4|4|2|3|2): Add API startup DB compatibility gate and optional read-only DB mode for serve-time safety.
+- [ ] P3 (2|3|3|2|2|3): Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented
 - [x] 2026-02-08: Fixed CI packaging failure by updating `Makefile` build fallback logic to handle missing `wheel`/`setuptools` safely (`Makefile`).
@@ -33,6 +39,8 @@
 - Slack channel export payloads are not consistently wrapped; accepting top-level arrays removes friction for offline mapping/provisioning.
 - Machine-readable run reports improve repeatability and provide evidence for autonomous maintenance loops.
 - CI emitted a CodeQL deprecation annotation; proactive action upgrades reduce future breakage risk.
+- Market scan (untrusted): Slack Web API rate limiting is expected behavior (429 + `Retry-After`), and Slack’s docs explicitly recommend handling retries/backoff; this is table-stakes for any real Slack seeding/provisioning flow. Sources: https://api.slack.com/docs/rate-limits, https://api.slack.com/docs/rate-limits#tiers_tier4
+- Market scan (untrusted): Adjacent open-source Slack export tooling emphasizes “view/search/forensics” workflows, implying export compatibility and predictable artifact layouts are a common expectation even when the generator is synthetic. Sources: https://github.com/Slacksky/viewexport, https://github.com/rusq/slackdump
 
 ## Notes
 - This file is maintained by the autonomous clone loop.
