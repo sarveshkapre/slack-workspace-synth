@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,11 @@ from slack_workspace_synth.models import Message
 from slack_workspace_synth.storage import SQLiteStore
 
 runner = CliRunner()
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def test_seed_live_dry_run(tmp_path: Path) -> None:
@@ -153,7 +159,8 @@ def test_seed_live_dry_run_requires_offline_mapping(tmp_path: Path) -> None:
         ],
     )
     assert seed.exit_code != 0
-    assert "provide --channel-map or --slack-channels" in seed.output.lower()
+    clean = _strip_ansi(seed.output).lower()
+    assert "provide --channel-map or --slack-channels" in clean
 
 
 def test_seed_live_dry_run_skips_dms_without_slack_calls(
