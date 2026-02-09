@@ -10,10 +10,11 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P1 (4|2|4|2|2|3): Add richer `seed-live --report` dry-run planning details (breakdowns by channel type and skip reasons) for safer live rollout review.
+- [ ] P0 (5|2|5|3|2|4): Fix `seed-live --dry-run` so it guarantees **zero** Slack API calls (including DM/MPDM opens and channel mapping fetch/create); fail fast with actionable guidance when inputs would require Slack.
+- [ ] P1 (4|2|4|3|2|4): Enrich `seed-live --report` (especially in dry-run) with channel-type breakdowns, channel-map coverage, and explicit skip reasons for safer live rollout planning.
+- [ ] P1 (4|2|4|2|2|4): Make the FastAPI read-only API open SQLite in read-only mode and avoid schema/PRAGMA mutation; return a clear 400 when the DB path is missing/invalid.
 - [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
 - [ ] P2 (3|4|3|3|3|2): Add incremental export/import mode with dedupe keys for append-style sync workflows.
-- [ ] P3 (3|4|4|2|3|2): Add API startup DB compatibility gate and optional read-only DB mode for serve-time safety.
 - [ ] P3 (2|3|3|2|2|3): Add performance benchmark script + docs for large workspace generation/export baselines.
 
 ## Implemented
