@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
@@ -22,7 +23,11 @@ def _resolve_db(db: str | None) -> str:
 
 
 def _store(db: str | None) -> SQLiteStore:
-    return SQLiteStore(_resolve_db(db))
+    path = _resolve_db(db)
+    try:
+        return SQLiteStore(path, read_only=True)
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as exc:
+        raise HTTPException(status_code=400, detail=f"invalid db path: {path} ({exc})") from None
 
 
 @app.get("/workspaces")

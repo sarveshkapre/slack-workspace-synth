@@ -162,3 +162,13 @@ def test_channels_cursor_pagination(tmp_path, monkeypatch):
         f"/workspaces/{workspace_id}/channels", params={"cursor": "", "offset": 10, "limit": 2}
     )
     assert r_both.status_code == 400
+
+
+def test_api_returns_400_for_missing_db_path(tmp_path, monkeypatch):
+    missing = tmp_path / "missing.db"
+    monkeypatch.setenv("SWSYNTH_DB", str(missing))
+    client = TestClient(app)
+
+    resp = client.get("/workspaces")
+    assert resp.status_code == 400
+    assert not missing.exists()

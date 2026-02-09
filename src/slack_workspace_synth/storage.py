@@ -12,8 +12,15 @@ from .models import Channel, ChannelMember, File, Message, User, Workspace
 
 
 class SQLiteStore:
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, *, read_only: bool = False) -> None:
         self.path = path
+        self.read_only = read_only
+        if read_only:
+            # API/server opens DB read-only to avoid mutating unknown/production DBs.
+            self.conn = _sqlite_connect_readonly(path)
+            self.conn.row_factory = sqlite3.Row
+            return
+
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
