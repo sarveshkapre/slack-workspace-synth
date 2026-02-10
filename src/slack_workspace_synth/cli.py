@@ -958,6 +958,16 @@ def export_jsonl(
     workspace_id: str | None = typer.Option(
         None, help="Workspace id (defaults to most recently created workspace)"
     ),
+    incremental_state: str | None = typer.Option(
+        None,
+        "--incremental-state",
+        help=(
+            "Read/write a state JSON file for incremental runs. If the file exists and matches "
+            "the selected workspace, its stored max message/file timestamps will be used as "
+            "defaults for --messages-after-ts/--files-after-ts when those flags are omitted. "
+            "On success, the state file is updated with the current max timestamps."
+        ),
+    ),
     compress: bool = typer.Option(False, help="Gzip JSONL outputs"),
     chunk_size: int = typer.Option(2000, help="SQLite fetch chunk size"),
     messages_after_ts: int | None = typer.Option(
@@ -981,6 +991,37 @@ def export_jsonl(
         workspace = store.get_workspace(resolved_workspace_id)
         if not workspace:
             raise typer.BadParameter(f"Workspace not found: {resolved_workspace_id}")
+
+        state_path = Path(incremental_state) if incremental_state else None
+        if state_path and state_path.exists():
+            try:
+                state_payload = _load_json_any(str(state_path))
+            except Exception as exc:
+                raise typer.BadParameter(f"Invalid incremental-state JSON: {state_path}: {exc}") from exc
+            if not isinstance(state_payload, dict):
+                raise typer.BadParameter(f"incremental-state must be an object JSON: {state_path}")
+            state_workspace_id = str(state_payload.get("workspace_id") or "")
+            if state_workspace_id and state_workspace_id != resolved_workspace_id:
+                typer.echo(
+                    "incremental-state workspace_id mismatch; ignoring stored timestamps "
+                    f"({state_workspace_id} != {resolved_workspace_id})",
+                    err=True,
+                )
+            else:
+                if messages_after_ts is None and state_payload.get("messages_max_ts") is not None:
+                    try:
+                        messages_after_ts = int(cast(object, state_payload.get("messages_max_ts")))
+                    except (TypeError, ValueError):
+                        raise typer.BadParameter(
+                            f"incremental-state has invalid messages_max_ts: {state_path}"
+                        )
+                if files_after_ts is None and state_payload.get("files_max_ts") is not None:
+                    try:
+                        files_after_ts = int(cast(object, state_payload.get("files_max_ts")))
+                    except (TypeError, ValueError):
+                        raise typer.BadParameter(
+                            f"incremental-state has invalid files_max_ts: {state_path}"
+                        )
 
         out_dir = Path(out) / resolved_workspace_id
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1022,6 +1063,25 @@ def export_jsonl(
             ),
             compress=compress,
         )
+
+        if state_path:
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            dump_json(
+                str(state_path),
+                {
+                    "workspace_id": resolved_workspace_id,
+                    "updated_at": datetime.now(tz=UTC).isoformat(),
+                    "tool_version": _PKG_VERSION,
+                    "messages_max_ts": store.max_message_ts(resolved_workspace_id),
+                    "files_max_ts": store.max_file_ts(resolved_workspace_id),
+                    "filters_used": {
+                        "messages_after_ts": messages_after_ts,
+                        "files_after_ts": files_after_ts,
+                    },
+                    "export_dir": str(out_dir),
+                    "compress": compress,
+                },
+            )
 
         typer.echo(f"Wrote export to: {out_dir}")
     finally:

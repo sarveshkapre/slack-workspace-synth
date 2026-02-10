@@ -645,6 +645,24 @@ class SQLiteStore:
             counts[table] = res["count"] if res else 0
         return counts
 
+    def max_message_ts(self, workspace_id: str) -> int | None:
+        row = self.conn.execute(
+            "SELECT MAX(ts) AS max_ts FROM messages WHERE workspace_id = ?",
+            (workspace_id,),
+        ).fetchone()
+        if not row or row["max_ts"] is None:
+            return None
+        return int(row["max_ts"])
+
+    def max_file_ts(self, workspace_id: str) -> int | None:
+        row = self.conn.execute(
+            "SELECT MAX(created_ts) AS max_ts FROM files WHERE workspace_id = ?",
+            (workspace_id,),
+        ).fetchone()
+        if not row or row["max_ts"] is None:
+            return None
+        return int(row["max_ts"])
+
     def channel_type_counts(self, workspace_id: str) -> dict[str, int]:
         cursor = self.conn.execute(
             (
@@ -664,6 +682,10 @@ class SQLiteStore:
             "meta": self.get_workspace_meta(workspace_id),
             "counts": self.stats(workspace_id),
             "channel_types": self.channel_type_counts(workspace_id),
+            "max": {
+                "messages_max_ts": self.max_message_ts(workspace_id),
+                "files_max_ts": self.max_file_ts(workspace_id),
+            },
         }
         return summary
 
