@@ -10,11 +10,11 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P2 (2|2|3|2|2|3): Add export manifests for JSONL runs (table -> rowcount, filters used, max ts) to make incremental pipelines more observable.
 - [ ] P3 (2|2|3|2|1|4): Add `make smoke` to run a minimal local end-to-end flow (generate, validate-db, export, import append) for fast operator verification.
 - [ ] P3 (2|2|3|2|2|3): Add a lightweight performance regression note in `docs/BENCHMARKS.md` with “expected ranges” and how to capture/compare results.
 
 ## Implemented
+- [x] 2026-02-10: `export-jsonl` now emits `export_manifest.json` (row counts + filters + max timestamps) for more observable incremental pipelines (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`, `tests/test_cli_export_jsonl_filters.py`) (commit `5a5d0b2`).
 - [x] 2026-02-10: Added `export-jsonl --incremental-state` (auto-tracks max message/file timestamps) and extended
   export summaries with max timestamps (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`,
   `tests/test_cli_export_jsonl_filters.py`) (commits `9525212`, `cece02b`).

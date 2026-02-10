@@ -9,6 +9,7 @@
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
+- 2026-02-10 | Add `export-jsonl` export manifest (`export_manifest.json`) with row counts + filters | Makes incremental/filtered export runs observable and machine-readable without scraping stdout or inferring slice sizes from DB stats | `make check` (31 passed) + updated CLI tests assert manifest rows_written and filters | 5a5d0b2 | high | trusted
 - 2026-02-10 | Add `export-jsonl --incremental-state` and export max timestamps | Makes append-style export/import workflows less error-prone by auto-tracking the last-seen message/file timestamps and exposing max timestamps in `summary.json` | `make check` (31 passed) + CLI smoke re-ran `export-jsonl --incremental-state` and confirmed second run writes empty incremental `messages.jsonl`/`files.jsonl` | 9525212, cece02b | high | trusted
 - 2026-02-10 | `seed-import` emits empty `content_flags.json` placeholder | Some Slack export consumers expect this reference file on certain plans; emitting an empty placeholder improves interoperability without changing bundle semantics | `pytest -q tests/test_cli_seed_import.py` (pass) + `make check` (31 passed) | 3ca2aa0 | high | trusted
 - 2026-02-10 | Add `swsynth slack-smoke` + `make slack-smoke` and wire into release checklist | Provides a safe, minimal credentialed Slack API verification path (auth + channel list) that operators can run during release/sandbox setup | `make check` (31 passed) + GitHub Actions run `21858224004` succeeded for the change | 534ddd0 | medium | trusted
@@ -36,15 +37,14 @@
 - Slack integration paths are still not exercised against a real Slack workspace in this cycle (no credentials available in automation). A credentialed operator can now run `swsynth slack-smoke` / `make slack-smoke` to validate auth/scopes and basic Slack API connectivity, but end-to-end posting/provisioning remains to be smoke-tested in a sandbox.
 
 ## Next Prioritized Tasks
-- Add export manifests for JSONL runs (table -> rowcount, filters used, max ts) to make incremental pipelines more observable.
 - Add `make smoke` to run a minimal local end-to-end flow (generate, validate-db, export, import append) for fast operator verification.
 - Start tracking benchmark baselines over time (targets + regression notes).
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
+- 2026-02-10 | `. .venv/bin/activate && make check` | `ruff/mypy ok; pytest: 31 passed; build produced 0.1.3 artifacts` | pass
 - 2026-02-10 | `. .venv/bin/activate && pytest -q tests/test_cli_seed_import.py` | `2 passed` | pass
 - 2026-02-10 | `. .venv/bin/activate && pytest -q tests/test_cli_export_jsonl_filters.py` | `2 passed` | pass
-- 2026-02-10 | `. .venv/bin/activate && make check` | `ruff/mypy ok; pytest: 31 passed; build produced 0.1.3 artifacts` | pass
 - 2026-02-10 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --quiet && swsynth export-jsonl --incremental-state ... (twice) && swsynth seed-import --validate && swsynth serve ... && curl /healthz` | Second `export-jsonl` produced empty incremental slices; `/healthz` returned `{"status":"ok"}` | pass
 - 2026-02-10 | `gh run watch 21858065043 --exit-status` | CI concluded `success` after gitleaks fetch-depth fix | pass
 - 2026-02-10 | `gh run watch 21858224004 --exit-status` | CI concluded `success` for slack-smoke + docs changes | pass

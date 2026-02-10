@@ -35,6 +35,7 @@ Export to JSONL:
 swsynth export-jsonl --db ./data/acme.db --out ./export --compress
 ```
 The export includes `channel_members.jsonl(.gz)` alongside users, channels, messages, and files.
+Each run also writes `export_manifest.json` with row counts, filters used, and max timestamps for incremental pipelines.
 For incremental export workflows, you can filter to only newer rows:
 `export-jsonl --messages-after-ts <unix_seconds>` and `--files-after-ts <unix_seconds>`.
 To avoid manually tracking timestamps across runs, you can also use `--incremental-state <path>` which
