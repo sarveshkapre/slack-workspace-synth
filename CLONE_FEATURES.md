@@ -10,15 +10,20 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P1 (4|3|5|3|2|4): Add `export-jsonl --incremental-state` to support append-style sync (auto-read/write a state JSON with max message/file timestamps and export only newer rows when re-run).
-- [ ] P1 (3|1|4|2|1|5): Extend `seed-import` bundle compatibility by emitting additional common reference artifacts (e.g. `content_flags.json`) and include them in `--validate`.
-- [ ] P2 (4|2|4|2|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in a release checklist and as an optional `make slack-smoke` target (skips when creds missing).
 - [ ] P2 (2|2|3|2|2|3): Add export manifests for JSONL runs (table -> rowcount, filters used, max ts) to make incremental pipelines more observable.
-- [ ] P3 (2|1|3|2|1|4): Add `make clean` to remove local build/test artifacts (`dist/`, `build/`, caches, `*.egg-info`) without touching user data.
 - [ ] P3 (2|2|3|2|1|4): Add `make smoke` to run a minimal local end-to-end flow (generate, validate-db, export, import append) for fast operator verification.
 - [ ] P3 (2|2|3|2|2|3): Add a lightweight performance regression note in `docs/BENCHMARKS.md` with “expected ranges” and how to capture/compare results.
 
 ## Implemented
+- [x] 2026-02-10: Added `export-jsonl --incremental-state` (auto-tracks max message/file timestamps) and extended
+  export summaries with max timestamps (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`,
+  `tests/test_cli_export_jsonl_filters.py`) (commits `9525212`, `cece02b`).
+- [x] 2026-02-10: `seed-import` now emits an empty `content_flags.json` placeholder and validates it (`src/slack_workspace_synth/cli.py`,
+  `tests/test_cli_seed_import.py`) (commit `3ca2aa0`).
+- [x] 2026-02-10: Added `make clean` for removing build/test artifacts without touching user data (`Makefile`) (commit `2be26fa`).
+- [x] 2026-02-10: Added a credentialed Slack API smoke check (`swsynth slack-smoke` + `make slack-smoke`) and updated
+  docs/release checklist (`src/slack_workspace_synth/cli.py`, `Makefile`, `docs/RELEASE.md`, `docs/ROADMAP.md`,
+  `docs/PROJECT.md`) (commit `534ddd0`).
 - [x] 2026-02-09: `seed-import` now emits empty `integration_logs.json` and `canvases.json` placeholders for better
   export-tool compatibility (`src/slack_workspace_synth/cli.py`, `tests/test_cli_seed_import.py`) (commit `38a5aea`).
 - [x] 2026-02-09: Added incremental JSONL export filters for messages/files via `export-jsonl --messages-after-ts` and
@@ -78,6 +83,9 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - Market scan (untrusted): Slack exports have a fairly predictable artifact layout (channels, DMs, users, etc); adjacent tools emphasize “view/search/forensics”, implying export-compatibility and stable output shapes are a common expectation even when the generator is synthetic. Sources: https://slack.com/help/articles/201658943-Export-your-workspace-data, https://github.com/Slacksky/viewexport, https://github.com/rusq/slackdump
 - Market scan (untrusted): Slack’s export ZIP format includes reference JSON files beyond channels/users (e.g. `integration_logs.json`, `canvases.json`, optional `content_flags.json` on some plans); emitting placeholders improves interoperability with export consumers. Source: https://slack.com/help/articles/220556107-How-to-read-Slack-data-exports
 - Market scan (untrusted): Many adjacent tools consume Slack exports as `.zip` bundles; emitting a zip improves interoperability for viewer and migration test workflows. Sources: https://slack.com/help/articles/201658943-Export-your-workspace-data, https://viewexport.com/, https://github.com/hfaran/slack-archive-viewer
+- Market scan (untrusted): Export viewers tend to assume “drop a zip/folder and browse/search”; supporting the common
+  export layout and stable file naming improves interoperability even for synthetic generators. Sources:
+  https://github.com/hfaran/slack-export-viewer, https://github.com/Slacksky/viewexport
 
 ## Notes
 - This file is maintained by the autonomous clone loop.

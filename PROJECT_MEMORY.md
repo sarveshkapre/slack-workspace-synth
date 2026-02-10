@@ -9,6 +9,11 @@
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
+- 2026-02-10 | Add `export-jsonl --incremental-state` and export max timestamps | Makes append-style export/import workflows less error-prone by auto-tracking the last-seen message/file timestamps and exposing max timestamps in `summary.json` | `make check` (31 passed) + CLI smoke re-ran `export-jsonl --incremental-state` and confirmed second run writes empty incremental `messages.jsonl`/`files.jsonl` | 9525212, cece02b | high | trusted
+- 2026-02-10 | `seed-import` emits empty `content_flags.json` placeholder | Some Slack export consumers expect this reference file on certain plans; emitting an empty placeholder improves interoperability without changing bundle semantics | `pytest -q tests/test_cli_seed_import.py` (pass) + `make check` (31 passed) | 3ca2aa0 | high | trusted
+- 2026-02-10 | Add `swsynth slack-smoke` + `make slack-smoke` and wire into release checklist | Provides a safe, minimal credentialed Slack API verification path (auth + channel list) that operators can run during release/sandbox setup | `make check` (31 passed) + GitHub Actions run `21858224004` succeeded for the change | 534ddd0 | medium | trusted
+- 2026-02-10 | Add `make clean` | Reduces local build/test artifact drift (dist/build/caches) while avoiding deletion of user data directories | `make check` (31 passed) | 2be26fa | high | trusted
+- 2026-02-10 | Fix GitHub Actions gitleaks failures by increasing checkout depth | `gitleaks-action` scans `git log` ranges and requires history; `fetch-depth: 1` caused ambiguous revision errors | GitHub Actions run `21858065043` succeeded after setting `fetch-depth: 0` for the gitleaks job | cece02b | high | untrusted
 - 2026-02-09 | `seed-import` emits empty `integration_logs.json` and `canvases.json` placeholders | Some Slack export consumers/tools expect these reference files; emitting empty placeholders improves interoperability without changing the core bundle semantics | `make check` (30 passed) + `tests/test_cli_seed_import.py` asserts presence (including zip) | 38a5aea | high | trusted
 - 2026-02-09 | Add `export-jsonl --messages-after-ts/--files-after-ts` filters for incremental exports | Supports append-style sync workflows by letting operators export only newer messages/files without rewriting full JSONL sets | `make check` (30 passed) + CLI smoke verified filtered JSONL files can be empty and still write correctly | c1759c7 | high | trusted
 - 2026-02-09 | Add `seed-import --validate` to validate on-disk (and optional zip) import bundle artifacts | Makes bulk import workflows safer by failing fast when required artifacts are missing or malformed | `make check` (30 passed) + CLI smoke `seed-import --zip-out ... --validate` succeeded | fe6c4bd | high | trusted
@@ -25,18 +30,24 @@
 ## Mistakes And Fixes
 - Template: YYYY-MM-DD | Issue | Root cause | Fix | Prevention rule | Commit | Confidence
 - 2026-02-09 | CI failure: CLI test asserted plain-text error message but Typer emitted ANSI-styled output in GitHub Actions | Brittle substring match against colorized output | Strip ANSI sequences before matching error text | In CLI tests, normalize output by stripping ANSI codes before assertions | ab8640f | high
+- 2026-02-10 | CI failure on `main` after adding incremental-state support | (1) Pushed without running `make check`, leaving lint/typecheck issues; (2) `gitleaks-action` attempted to scan a `git log` range but checkout used `fetch-depth: 1`, so the parent commit was missing | Fix ruff/mypy issues and set gitleaks checkout `fetch-depth: 0` | Always run `make check` before pushing; for workflows that scan git history/ranges, ensure checkout depth includes required commits | cece02b | high
 
 ## Known Risks
-- Slack integration paths were not exercised against a real Slack workspace in this cycle (no credentials available in automation). Next step is a credentialed Slack sandbox smoke check to validate scopes, rate-limit behavior, and error handling end-to-end.
+- Slack integration paths are still not exercised against a real Slack workspace in this cycle (no credentials available in automation). A credentialed operator can now run `swsynth slack-smoke` / `make slack-smoke` to validate auth/scopes and basic Slack API connectivity, but end-to-end posting/provisioning remains to be smoke-tested in a sandbox.
 
 ## Next Prioritized Tasks
-- Add credentialed Slack sandbox smoke run (CI optional or release checklist) for `channel-map`/`provision-slack`/`seed-live`.
-- Add incremental export modes to pair with append imports (sync only new rows using cursors/timestamps).
-- Add `seed-import` output validation to ensure required Slack export artifacts exist (fail fast before shipping bundles).
+- Add export manifests for JSONL runs (table -> rowcount, filters used, max ts) to make incremental pipelines more observable.
+- Add `make smoke` to run a minimal local end-to-end flow (generate, validate-db, export, import append) for fast operator verification.
 - Start tracking benchmark baselines over time (targets + regression notes).
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
+- 2026-02-10 | `. .venv/bin/activate && pytest -q tests/test_cli_seed_import.py` | `2 passed` | pass
+- 2026-02-10 | `. .venv/bin/activate && pytest -q tests/test_cli_export_jsonl_filters.py` | `2 passed` | pass
+- 2026-02-10 | `. .venv/bin/activate && make check` | `ruff/mypy ok; pytest: 31 passed; build produced 0.1.3 artifacts` | pass
+- 2026-02-10 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --quiet && swsynth export-jsonl --incremental-state ... (twice) && swsynth seed-import --validate && swsynth serve ... && curl /healthz` | Second `export-jsonl` produced empty incremental slices; `/healthz` returned `{"status":"ok"}` | pass
+- 2026-02-10 | `gh run watch 21858065043 --exit-status` | CI concluded `success` after gitleaks fetch-depth fix | pass
+- 2026-02-10 | `gh run watch 21858224004 --exit-status` | CI concluded `success` for slack-smoke + docs changes | pass
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 30 passed; build produced `slack_workspace_synth-0.1.3*` artifacts | pass
 - 2026-02-09 | `swsynth generate ... && swsynth export-jsonl --messages-after-ts <max_ts> --files-after-ts <max_ts> && swsynth seed-import --zip-out ... --validate` | Export wrote empty filtered `messages.jsonl`/`files.jsonl`; seed-import validated + wrote zip | pass
 - 2026-02-09 | `gh run watch 21842776442 --exit-status` | CI concluded `success` for commit `c1759c7` | pass
