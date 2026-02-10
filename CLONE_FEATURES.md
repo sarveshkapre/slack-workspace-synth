@@ -10,9 +10,13 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P2 (3|3|4|3|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in CI or release checklist.
-- [ ] P2 (3|4|3|3|3|2): Add incremental export mode to pair with append imports (sync only new rows using cursors/timestamps).
+- [ ] P1 (4|3|5|3|2|4): Add `export-jsonl --incremental-state` to support append-style sync (auto-read/write a state JSON with max message/file timestamps and export only newer rows when re-run).
+- [ ] P1 (3|1|4|2|1|5): Extend `seed-import` bundle compatibility by emitting additional common reference artifacts (e.g. `content_flags.json`) and include them in `--validate`.
+- [ ] P2 (4|2|4|2|2|3): Add a Slack sandbox integration smoke check (credentialed) for `channel-map`/`provision-slack`/`seed-live` in a release checklist and as an optional `make slack-smoke` target (skips when creds missing).
+- [ ] P2 (2|2|3|2|2|3): Add export manifests for JSONL runs (table -> rowcount, filters used, max ts) to make incremental pipelines more observable.
 - [ ] P3 (2|1|3|2|1|4): Add `make clean` to remove local build/test artifacts (`dist/`, `build/`, caches, `*.egg-info`) without touching user data.
+- [ ] P3 (2|2|3|2|1|4): Add `make smoke` to run a minimal local end-to-end flow (generate, validate-db, export, import append) for fast operator verification.
+- [ ] P3 (2|2|3|2|2|3): Add a lightweight performance regression note in `docs/BENCHMARKS.md` with “expected ranges” and how to capture/compare results.
 
 ## Implemented
 - [x] 2026-02-09: `seed-import` now emits empty `integration_logs.json` and `canvases.json` placeholders for better
