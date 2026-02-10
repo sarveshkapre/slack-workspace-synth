@@ -148,6 +148,7 @@ def test_export_jsonl_incremental_state_defaults_to_previous_max_ts(tmp_path: Pa
     )
     assert second.exit_code == 0, second.stdout
 
-    # Second run should default to the state file's max timestamps, producing empty incremental slices.
+    # Second run should default to the state file's max timestamps,
+    # producing empty incremental slices.
     assert _count_lines(out_dir / "messages.jsonl") == 0
     assert _count_lines(out_dir / "files.jsonl") == 0

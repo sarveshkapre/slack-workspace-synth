@@ -997,7 +997,9 @@ def export_jsonl(
             try:
                 state_payload = _load_json_any(str(state_path))
             except Exception as exc:
-                raise typer.BadParameter(f"Invalid incremental-state JSON: {state_path}: {exc}") from exc
+                raise typer.BadParameter(
+                    f"Invalid incremental-state JSON: {state_path}: {exc}"
+                ) from exc
             if not isinstance(state_payload, dict):
                 raise typer.BadParameter(f"incremental-state must be an object JSON: {state_path}")
             state_workspace_id = str(state_payload.get("workspace_id") or "")
@@ -1010,18 +1012,24 @@ def export_jsonl(
             else:
                 if messages_after_ts is None and state_payload.get("messages_max_ts") is not None:
                     try:
-                        messages_after_ts = int(cast(object, state_payload.get("messages_max_ts")))
-                    except (TypeError, ValueError):
+                        raw = state_payload.get("messages_max_ts")
+                        if not isinstance(raw, (int, str)):
+                            raise TypeError("messages_max_ts must be int or str")
+                        messages_after_ts = int(raw)
+                    except (TypeError, ValueError) as exc:
                         raise typer.BadParameter(
                             f"incremental-state has invalid messages_max_ts: {state_path}"
-                        )
+                        ) from exc
                 if files_after_ts is None and state_payload.get("files_max_ts") is not None:
                     try:
-                        files_after_ts = int(cast(object, state_payload.get("files_max_ts")))
-                    except (TypeError, ValueError):
+                        raw = state_payload.get("files_max_ts")
+                        if not isinstance(raw, (int, str)):
+                            raise TypeError("files_max_ts must be int or str")
+                        files_after_ts = int(raw)
+                    except (TypeError, ValueError) as exc:
                         raise typer.BadParameter(
                             f"incremental-state has invalid files_max_ts: {state_path}"
-                        )
+                        ) from exc
 
         out_dir = Path(out) / resolved_workspace_id
         out_dir.mkdir(parents=True, exist_ok=True)
