@@ -82,6 +82,7 @@ def _validate_seed_import_bundle(
         "mpims.json",
         "integration_logs.json",
         "canvases.json",
+        "content_flags.json",
         "import_id_map.json",
         "summary.json",
     ]
@@ -1175,6 +1176,7 @@ def seed_import(
         # export-tool compatibility.
         dump_json(str(out_dir / "integration_logs.json"), [])
         dump_json(str(out_dir / "canvases.json"), [])
+        dump_json(str(out_dir / "content_flags.json"), [])
         dump_json(
             str(out_dir / "import_id_map.json"),
             {"users": user_id_map, "channels": channel_id_map},
