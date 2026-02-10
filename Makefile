@@ -2,7 +2,7 @@ PYTHON=python3
 VENV=.venv
 BIN=$(VENV)/bin
 
-.PHONY: setup dev test lint typecheck build check bench release
+.PHONY: setup dev test lint typecheck build check bench release clean
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -38,3 +38,8 @@ bench:
 	$(BIN)/python scripts/bench.py --profile quick --out ./bench_out/quick
 
 release: build
+
+clean:
+	rm -rf dist build .pytest_cache .mypy_cache .ruff_cache bench_out
+	rm -rf src/*.egg-info
+	find src tests -type d -name __pycache__ -prune -exec rm -rf {} + || true
