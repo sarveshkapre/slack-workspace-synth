@@ -37,6 +37,8 @@ swsynth export-jsonl --db ./data/acme.db --out ./export --compress
 The export includes `channel_members.jsonl(.gz)` alongside users, channels, messages, and files.
 For incremental export workflows, you can filter to only newer rows:
 `export-jsonl --messages-after-ts <unix_seconds>` and `--files-after-ts <unix_seconds>`.
+To avoid manually tracking timestamps across runs, you can also use `--incremental-state <path>` which
+auto-updates a small state JSON file with the latest max timestamps.
 
 Generate a Slack import bundle (export-style):
 ```bash
