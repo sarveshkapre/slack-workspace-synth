@@ -18,3 +18,4 @@ __pycache__/
 .DS_Store
 data/
 export/
+smoke_out/

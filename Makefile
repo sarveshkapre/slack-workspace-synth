@@ -2,7 +2,7 @@ PYTHON=python3
 VENV=.venv
 BIN=$(VENV)/bin
 
-.PHONY: setup dev test lint typecheck build check bench release clean slack-smoke
+.PHONY: setup dev test lint typecheck build check bench smoke release clean slack-smoke
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -36,6 +36,16 @@ check: lint typecheck test build
 
 bench:
 	$(BIN)/python scripts/bench.py --profile quick --out ./bench_out/quick
+
+smoke:
+	rm -rf smoke_out
+	mkdir -p smoke_out
+	$(BIN)/swsynth generate --workspace "Smoke Test" --users 20 --channels 5 --messages 200 --files 20 --seed 1 --db ./smoke_out/source.db
+	$(BIN)/swsynth validate-db --db ./smoke_out/source.db --require-workspace --quiet
+	$(BIN)/swsynth export-jsonl --db ./smoke_out/source.db --out ./smoke_out/export
+	$(BIN)/swsynth import-jsonl --source ./smoke_out/export --db ./smoke_out/imported.db
+	$(BIN)/swsynth import-jsonl --source ./smoke_out/export --db ./smoke_out/imported.db --mode append
+	$(BIN)/swsynth validate-db --db ./smoke_out/imported.db --require-workspace --quiet
 
 release: build
 
