@@ -1038,22 +1038,23 @@ def export_jsonl(
         dump_json(str(out_dir / "summary.json"), store.export_summary(resolved_workspace_id))
 
         suffix = ".jsonl.gz" if compress else ".jsonl"
-        dump_jsonl(
+        rows_written: dict[str, int] = {}
+        rows_written["users"] = dump_jsonl(
             str(out_dir / f"users{suffix}"),
             store.iter_users(resolved_workspace_id, chunk_size=chunk_size),
             compress=compress,
         )
-        dump_jsonl(
+        rows_written["channels"] = dump_jsonl(
             str(out_dir / f"channels{suffix}"),
             store.iter_channels(resolved_workspace_id, chunk_size=chunk_size),
             compress=compress,
         )
-        dump_jsonl(
+        rows_written["channel_members"] = dump_jsonl(
             str(out_dir / f"channel_members{suffix}"),
             store.iter_channel_members(resolved_workspace_id, chunk_size=chunk_size),
             compress=compress,
         )
-        dump_jsonl(
+        rows_written["messages"] = dump_jsonl(
             str(out_dir / f"messages{suffix}"),
             store.iter_messages(
                 resolved_workspace_id,
@@ -1062,7 +1063,7 @@ def export_jsonl(
             ),
             compress=compress,
         )
-        dump_jsonl(
+        rows_written["files"] = dump_jsonl(
             str(out_dir / f"files{suffix}"),
             store.iter_files(
                 resolved_workspace_id,
@@ -1070,6 +1071,38 @@ def export_jsonl(
                 after_ts=files_after_ts,
             ),
             compress=compress,
+        )
+
+        dump_json(
+            str(out_dir / "export_manifest.json"),
+            {
+                "workspace_id": resolved_workspace_id,
+                "generated_at": datetime.now(tz=UTC).isoformat(),
+                "tool_version": _PKG_VERSION,
+                "db": db,
+                "export_dir": str(out_dir),
+                "compress": compress,
+                "chunk_size": chunk_size,
+                "filters_used": {
+                    "messages_after_ts": messages_after_ts,
+                    "files_after_ts": files_after_ts,
+                },
+                "rows_written": rows_written,
+                "db_max": {
+                    "messages_max_ts": store.max_message_ts(resolved_workspace_id),
+                    "files_max_ts": store.max_file_ts(resolved_workspace_id),
+                },
+                "files": {
+                    "workspace": "workspace.json",
+                    "summary": "summary.json",
+                    "manifest": "export_manifest.json",
+                    "users": f"users{suffix}",
+                    "channels": f"channels{suffix}",
+                    "channel_members": f"channel_members{suffix}",
+                    "messages": f"messages{suffix}",
+                    "files": f"files{suffix}",
+                },
+            },
         )
 
         if state_path:

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -78,9 +79,17 @@ def test_export_jsonl_after_ts_filters_messages_and_files(tmp_path: Path) -> Non
     assert out_dir.exists()
     assert (out_dir / "workspace.json").exists()
     assert (out_dir / "summary.json").exists()
+    assert (out_dir / "export_manifest.json").exists()
 
     assert _count_lines(out_dir / "messages.jsonl") == 0
     assert _count_lines(out_dir / "files.jsonl") == 0
+
+    manifest = json.loads((out_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["workspace_id"] == workspace_id
+    assert manifest["filters_used"]["messages_after_ts"] == max_message_ts
+    assert manifest["filters_used"]["files_after_ts"] == max_file_ts
+    assert manifest["rows_written"]["messages"] == 0
+    assert manifest["rows_written"]["files"] == 0
 
 
 def test_export_jsonl_incremental_state_defaults_to_previous_max_ts(tmp_path: Path) -> None:
@@ -133,6 +142,9 @@ def test_export_jsonl_incremental_state_defaults_to_previous_max_ts(tmp_path: Pa
     out_dir = export_dir / workspace_id
     assert _count_lines(out_dir / "messages.jsonl") > 0
     assert _count_lines(out_dir / "files.jsonl") > 0
+    first_manifest = json.loads((out_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert first_manifest["rows_written"]["messages"] > 0
+    assert first_manifest["rows_written"]["files"] > 0
 
     second = runner.invoke(
         app,
@@ -152,3 +164,6 @@ def test_export_jsonl_incremental_state_defaults_to_previous_max_ts(tmp_path: Pa
     # producing empty incremental slices.
     assert _count_lines(out_dir / "messages.jsonl") == 0
     assert _count_lines(out_dir / "files.jsonl") == 0
+    second_manifest = json.loads((out_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert second_manifest["rows_written"]["messages"] == 0
+    assert second_manifest["rows_written"]["files"] == 0

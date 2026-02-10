@@ -875,8 +875,9 @@ def dump_json(path: str, payload: object) -> None:
         json.dump(payload, f, indent=2)
 
 
-def dump_jsonl(path: str, rows: Iterable[dict[str, object]], *, compress: bool = False) -> None:
+def dump_jsonl(path: str, rows: Iterable[dict[str, object]], *, compress: bool = False) -> int:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+    count = 0
     if compress:
         import gzip
 
@@ -884,11 +885,14 @@ def dump_jsonl(path: str, rows: Iterable[dict[str, object]], *, compress: bool =
             for row in rows:
                 f.write(json.dumps(row, ensure_ascii=False))
                 f.write("\n")
-        return
+                count += 1
+        return count
     with open(path, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False))
             f.write("\n")
+            count += 1
+    return count
 
 
 def load_jsonl(path: str) -> Iterable[dict[str, object]]:
