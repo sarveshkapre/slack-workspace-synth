@@ -1825,6 +1825,89 @@ def channel_map(
         store.close()
 
 
+@app.command("slack-smoke")
+def slack_smoke(
+    slack_token: str | None = typer.Option(None, help="Slack token for smoke test"),
+    team_id: str | None = typer.Option(None, help="Enterprise Grid team/workspace id"),
+    include_private: bool = typer.Option(True, help="Include private channels in list check"),
+    limit: int = typer.Option(5, help="Limit channels to fetch for the list check"),
+    out: str | None = typer.Option(None, help="Write report JSON path"),
+    base_url: str = typer.Option("https://slack.com/api", help="Slack Web API base"),
+    slack_max_retries: int = typer.Option(6, help="Max retries for Slack API calls"),
+    slack_timeout_seconds: int = typer.Option(30, help="Slack API request timeout (seconds)"),
+    slack_max_backoff_seconds: int = typer.Option(30, help="Max retry backoff delay (seconds)"),
+) -> None:
+    """Credentialed Slack API smoke check (auth + channel list)."""
+    if not slack_token:
+        raise typer.BadParameter("Provide --slack-token.")
+
+    auth = _slack_get_json(
+        slack_token,
+        f"{base_url}/auth.test",
+        {},
+        max_retries=slack_max_retries,
+        timeout_seconds=slack_timeout_seconds,
+        max_backoff_seconds=slack_max_backoff_seconds,
+    )
+    if not auth.get("ok"):
+        raise RuntimeError(f"auth.test failed: {auth}")
+
+    types = ["public_channel"]
+    if include_private:
+        types.append("private_channel")
+    params = {"limit": str(max(1, limit)), "types": ",".join(types)}
+    if team_id:
+        params["team_id"] = team_id
+
+    channels_resp = _slack_get_json(
+        slack_token,
+        f"{base_url}/conversations.list",
+        params,
+        max_retries=slack_max_retries,
+        timeout_seconds=slack_timeout_seconds,
+        max_backoff_seconds=slack_max_backoff_seconds,
+    )
+    if not channels_resp.get("ok"):
+        raise RuntimeError(f"conversations.list failed: {channels_resp}")
+
+    channels_raw = channels_resp.get("channels")
+    channels: list[dict[str, object]] = []
+    if isinstance(channels_raw, list):
+        for entry in channels_raw:
+            if not isinstance(entry, dict):
+                continue
+            channels.append(
+                {
+                    "id": str(entry.get("id") or ""),
+                    "name": str(entry.get("name") or ""),
+                    "is_private": bool(entry.get("is_private") or False),
+                }
+            )
+
+    report = {
+        "ok": True,
+        "auth": {
+            "url": auth.get("url"),
+            "team": auth.get("team"),
+            "team_id": auth.get("team_id"),
+            "user": auth.get("user"),
+            "user_id": auth.get("user_id"),
+        },
+        "channels_fetched": len(channels),
+        "channels_sample": channels[:3],
+        "team_id": team_id,
+        "include_private": include_private,
+        "limit": limit,
+        "base_url": base_url,
+        "checked_at": datetime.now(tz=UTC).isoformat(),
+        "tool_version": _PKG_VERSION,
+    }
+
+    if out:
+        dump_json(out, report)
+    typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+
+
 @app.command("provision-slack")
 def provision_slack(
     db: str = typer.Option("./data/workspace.db", help="SQLite DB path"),

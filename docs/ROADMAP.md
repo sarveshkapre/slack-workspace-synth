@@ -13,9 +13,9 @@
 - Enterprise Grid seeding guide (Entra SCIM + per-user OAuth + optional bulk import)
 - Slack seeding/provisioning helpers (channel-map, provision-slack, seed-live)
 - Slack API hardening (retry/backoff + safer defaults + richer machine-readable reports)
+- Credentialed Slack API smoke check (`swsynth slack-smoke` + `make slack-smoke`)
 - DB safety gates (`validate-db`, fail-fast server startup, read-only DB opens)
 - Performance baselines (local benchmark script + documented workflow)
 
 ## Next
 - Incremental export/import (append-style sync with dedupe keys)
-- Credentialed Slack sandbox smoke run for `channel-map`/`provision-slack`/`seed-live` (optional CI or release checklist)

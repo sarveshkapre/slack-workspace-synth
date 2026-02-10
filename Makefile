@@ -2,7 +2,7 @@ PYTHON=python3
 VENV=.venv
 BIN=$(VENV)/bin
 
-.PHONY: setup dev test lint typecheck build check bench release clean
+.PHONY: setup dev test lint typecheck build check bench release clean slack-smoke
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -43,3 +43,9 @@ clean:
 	rm -rf dist build .pytest_cache .mypy_cache .ruff_cache bench_out
 	rm -rf src/*.egg-info
 	find src tests -type d -name __pycache__ -prune -exec rm -rf {} + || true
+
+slack-smoke:
+	@if [ -z "$$SLACK_SMOKE_TOKEN" ]; then echo "SLACK_SMOKE_TOKEN not set; skipping"; exit 0; fi
+	@ARGS="--slack-token $$SLACK_SMOKE_TOKEN"; \
+	if [ -n "$$SLACK_SMOKE_TEAM_ID" ]; then ARGS="$$ARGS --team-id $$SLACK_SMOKE_TEAM_ID"; fi; \
+	$(BIN)/swsynth slack-smoke $$ARGS

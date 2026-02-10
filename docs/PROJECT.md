@@ -80,6 +80,12 @@ make check
 make release
 ```
 
+## Slack Sandbox Smoke Check (Credentialed)
+This verifies Slack API connectivity and basic scopes (`auth.test` + `conversations.list`).
+```bash
+SLACK_SMOKE_TOKEN=xoxp-... make slack-smoke
+```
+
 ## Next 3 improvements
 1. Add a credentialed Slack sandbox smoke run (release checklist or optional CI) for `channel-map`/`provision-slack`/`seed-live`.
 2. Add incremental export modes to pair with append imports (sync only new rows).
