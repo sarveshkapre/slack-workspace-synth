@@ -16,6 +16,7 @@ Create a synthetic Slack-like workspace with users, channels, DMs/MPDMs, message
 make setup
 make dev
 ```
+Optional: `make smoke` runs a minimal local end-to-end flow (generate, validate, export, import).
 
 Generate a workspace:
 ```bash
