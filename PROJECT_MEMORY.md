@@ -48,6 +48,7 @@
 - 2026-02-10 | `. .venv/bin/activate && swsynth generate ... && swsynth validate-db --quiet && swsynth export-jsonl --incremental-state ... (twice) && swsynth seed-import --validate && swsynth serve ... && curl /healthz` | Second `export-jsonl` produced empty incremental slices; `/healthz` returned `{"status":"ok"}` | pass
 - 2026-02-10 | `gh run watch 21858065043 --exit-status` | CI concluded `success` after gitleaks fetch-depth fix | pass
 - 2026-02-10 | `gh run watch 21858224004 --exit-status` | CI concluded `success` for slack-smoke + docs changes | pass
+- 2026-02-10 | `gh run watch 21858333262 --exit-status` | CI concluded `success` for docs tracker updates | pass
 - 2026-02-09 | `. .venv/bin/activate && make check` | `pytest -q`: 30 passed; build produced `slack_workspace_synth-0.1.3*` artifacts | pass
 - 2026-02-09 | `swsynth generate ... && swsynth export-jsonl --messages-after-ts <max_ts> --files-after-ts <max_ts> && swsynth seed-import --zip-out ... --validate` | Export wrote empty filtered `messages.jsonl`/`files.jsonl`; seed-import validated + wrote zip | pass
 - 2026-02-09 | `gh run watch 21842776442 --exit-status` | CI concluded `success` for commit `c1759c7` | pass
