@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import uuid
@@ -30,8 +31,39 @@ class GenerationConfig:
     mpdm_members_max: int = 7
 
 
-def _uuid() -> str:
-    return uuid.uuid4().hex
+_ID_STREAM_SEED_OFFSETS = {
+    "workspace": 1_001,
+    "users": 1_003,
+    "channels": 1_009,
+    "messages": 1_021,
+    "files": 1_031,
+}
+
+
+def _id_rng(seed: int, stream: str, *, namespace: str = "") -> random.Random:
+    offset = _ID_STREAM_SEED_OFFSETS[stream]
+    payload = f"{seed}:{offset}:{namespace}".encode()
+    digest = hashlib.sha256(payload).hexdigest()
+    return random.Random(int(digest[:16], 16))
+
+
+def _workspace_id_namespace(config: GenerationConfig) -> str:
+    return "|".join(
+        [
+            config.workspace_name,
+            str(config.users),
+            str(config.channels),
+            str(config.dm_channels),
+            str(config.mpdm_channels),
+            str(config.messages),
+            str(config.files),
+        ]
+    )
+
+
+def _seeded_uuid(rng: random.Random) -> str:
+    # UUID v4 shape with deterministic bits from the seeded RNG.
+    return uuid.UUID(int=rng.getrandbits(128), version=4).hex
 
 
 def _base_ts(seed: int) -> int:
@@ -42,9 +74,19 @@ def _slug(text: str) -> str:
     return "".join(c for c in text.lower().replace(" ", "-") if c.isalnum() or c == "-")
 
 
-def generate_workspace(config: GenerationConfig, plugins: PluginRegistry) -> Workspace:
+def generate_workspace(
+    config: GenerationConfig,
+    plugins: PluginRegistry,
+    *,
+    id_rng: random.Random | None = None,
+) -> Workspace:
     ts = _base_ts(config.seed)
-    payload = {"id": _uuid(), "name": config.workspace_name, "created_at": ts}
+    ids = id_rng or _id_rng(
+        config.seed,
+        "workspace",
+        namespace=_workspace_id_namespace(config),
+    )
+    payload = {"id": _seeded_uuid(ids), "name": config.workspace_name, "created_at": ts}
     payload = plugins.on_workspace(payload)
     return Workspace(
         id=cast(str, payload["id"]),
@@ -59,13 +101,16 @@ def generate_users(
     rng: random.Random,
     faker: Faker,
     plugins: PluginRegistry,
+    *,
+    id_rng: random.Random | None = None,
 ) -> list[User]:
+    ids = id_rng or _id_rng(config.seed, "users", namespace=workspace_id)
     users: list[User] = []
     for idx in range(config.users):
         name = faker.name()
         email = f"{_slug(name)}.{idx}@example.com"
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "name": name,
             "email": email,
@@ -92,14 +137,17 @@ def generate_channels(
     rng: random.Random,
     faker: Faker,
     plugins: PluginRegistry,
+    *,
+    id_rng: random.Random | None = None,
 ) -> list[Channel]:
+    ids = id_rng or _id_rng(config.seed, "channels", namespace=workspace_id)
     channels: list[Channel] = []
     for idx in range(config.channels):
         base = faker.word().replace("_", "-")
         name = f"{base}-{idx}" if idx > 0 else base
         is_private = 1 if rng.random() < 0.15 else 0
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "name": name,
             "is_private": is_private,
@@ -119,7 +167,7 @@ def generate_channels(
         )
     for idx in range(config.dm_channels):
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "name": f"dm-{idx + 1:04d}",
             "is_private": 1,
@@ -139,7 +187,7 @@ def generate_channels(
         )
     for idx in range(config.mpdm_channels):
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "name": f"mpdm-{idx + 1:04d}",
             "is_private": 1,
@@ -215,11 +263,14 @@ def generate_messages(
     rng: random.Random,
     faker: Faker,
     plugins: PluginRegistry,
+    *,
+    id_rng: random.Random | None = None,
 ) -> Iterable[Message]:
+    ids = id_rng or _id_rng(config.seed, "messages", namespace=workspace_id)
     base_ts = _base_ts(config.seed)
     for _ in range(config.messages):
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "channel_id": rng.choice(channel_ids),
             "user_id": rng.choice(user_ids),
@@ -252,12 +303,15 @@ def generate_files(
     rng: random.Random,
     faker: Faker,
     plugins: PluginRegistry,
+    *,
+    id_rng: random.Random | None = None,
 ) -> Iterable[File]:
+    ids = id_rng or _id_rng(config.seed, "files", namespace=workspace_id)
     mime_types = ["application/pdf", "image/png", "text/plain", "application/zip"]
     base_ts = _base_ts(config.seed)
     for _ in range(config.files):
         payload = {
-            "id": _uuid(),
+            "id": _seeded_uuid(ids),
             "workspace_id": workspace_id,
             "user_id": rng.choice(user_ids),
             "name": f"{faker.word()}.{rng.choice(['pdf', 'png', 'txt', 'zip'])}",
@@ -266,7 +320,7 @@ def generate_files(
             "created_ts": base_ts - rng.randint(0, 60 * 60 * 24 * 30),
             "channel_id": rng.choice(channel_ids),
             "message_id": None,
-            "url": f"https://files.example.com/{_uuid()}",
+            "url": f"https://files.example.com/{_seeded_uuid(ids)}",
         }
         payload = plugins.on_file(payload)
         message_id = cast(str | None, payload.get("message_id"))
