@@ -10,9 +10,19 @@
 Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk | Confidence (1-5 each).
 
 ### Backlog
-- [ ] P3 (2|2|3|2|2|3): Add a lightweight performance regression note in `docs/BENCHMARKS.md` with “expected ranges” and how to capture/compare results.
+- [ ] P1 (4|3|4|3|2|4): Add an `export-manifest verify` path that validates expected files/count metadata before import.
+- [ ] P1 (4|2|4|2|2|4): Extend `make smoke` to include a short API boot + `/healthz`/paged endpoint sanity check.
+- [ ] P1 (4|3|4|3|2|3): Add import diagnostics for malformed JSONL rows (table + row number + key) to reduce triage time.
+- [ ] P2 (3|3|4|2|2|4): Add a benchmark report comparator script (`scripts/bench_compare.py`) with threshold-based pass/fail output.
+- [ ] P2 (3|2|4|2|1|4): Persist import run manifests (rows inserted/skipped per table) for append-mode observability.
+- [ ] P2 (3|2|3|2|1|4): Add optional strict schema validation for `--slack-channels` payload inputs with clearer error messages.
+- [ ] P2 (3|2|3|3|2|3): Add `swsynth stats --assert-*` guardrails for CI/smoke automation checks.
+- [ ] P3 (2|2|3|2|1|4): Add a compact docs page mapping common operator workflows to exact commands.
+- [ ] P3 (2|1|3|1|1|5): Add perf-note links from `README.md` to `docs/BENCHMARKS.md` for discoverability.
 
 ## Implemented
+- [x] 2026-02-11: Made generator IDs deterministic for seeded runs and namespaced ID streams by workspace/config shape to prevent cross-workspace PK collisions when reusing seeds (`src/slack_workspace_synth/generator.py`, `tests/test_generator_determinism.py`) (commit `a09a65e`).
+- [x] 2026-02-11: Added benchmark expected ranges and a repeatable regression-capture workflow for `quick/default/enterprise` profiles (`docs/BENCHMARKS.md`) (commit `f1957a2`).
 - [x] 2026-02-10: Added `make smoke` for a minimal local end-to-end flow (generate, validate-db, export, import, import append) (`Makefile`, `.gitignore`) (commit `dece286`).
 - [x] 2026-02-10: `export-jsonl` now emits `export_manifest.json` (row counts + filters + max timestamps) for more observable incremental pipelines (`src/slack_workspace_synth/cli.py`, `src/slack_workspace_synth/storage.py`, `tests/test_cli_export_jsonl_filters.py`) (commit `5a5d0b2`).
 - [x] 2026-02-10: Added `export-jsonl --incremental-state` (auto-tracks max message/file timestamps) and extended
@@ -73,6 +83,11 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
   `python scripts/bench.py --profile quick`) completed with expected outputs.
 - [x] Verification 2026-02-09: GitHub Actions runs succeeded for pushed commits `e24ac6a`, `0833cef`, `566aa4e`
   (run IDs `21834239914`, `21834323376`, `21834464863`).
+- [x] Verification 2026-02-11: `. .venv/bin/activate && pytest -q tests/test_generator.py tests/test_generator_determinism.py` (pass, 3 tests).
+- [x] Verification 2026-02-11: `. .venv/bin/activate && make check` (pass; lint, mypy, pytest 34 passed, build success).
+- [x] Verification 2026-02-11: `. .venv/bin/activate && make smoke` (pass; generate/validate/export/import/import-append flow completed).
+- [x] Verification 2026-02-11: `. .venv/bin/activate && python scripts/bench.py --profile quick --out ./bench_out/quick && python scripts/bench.py --profile default --out ./bench_out/default && python scripts/bench.py --profile enterprise --out ./bench_out/enterprise` (pass; reports generated and benchmark ranges documented).
+- [x] Verification 2026-02-11: GitHub Actions runs succeeded for pushed commits `a09a65e`, `f1957a2` (run IDs `21896683224`, `21896720205`).
 
 ## Insights
 - CI failures from runs `21617680408` through `21618554925` all had the same root cause: `make build` invoked `python -m build --no-isolation` without `wheel` installed in the active venv.
@@ -86,6 +101,7 @@ Scoring lens (rough): Impact | Effort | Strategic Fit | Differentiation | Risk |
 - Market scan (untrusted): Export viewers tend to assume “drop a zip/folder and browse/search”; supporting the common
   export layout and stable file naming improves interoperability even for synthetic generators. Sources:
   https://github.com/hfaran/slack-export-viewer, https://github.com/Slacksky/viewexport
+- Market scan (untrusted): Synthetic-data tooling expectations treat seeded runs as reproducible building blocks; explicit seeded generation should include stable IDs, not just stable counts/content. Sources: https://faker.readthedocs.io/en/master/providers/baseprovider.html, https://faker.readthedocs.io/en/master/fakerclass.html
 
 ## Notes
 - This file is maintained by the autonomous clone loop.

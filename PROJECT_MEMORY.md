@@ -9,6 +9,9 @@
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
+- 2026-02-11 | Make generated IDs deterministic and workspace-scoped | Product promise is seed determinism; `uuid4` introduced non-seeded entropy and made reproducibility incomplete | `pytest -q tests/test_generator.py tests/test_generator_determinism.py` (pass), `make check` (34 passed), `make smoke` (pass) | a09a65e | high | trusted
+- 2026-02-11 | Add benchmark expected ranges + capture workflow requiring fresh output paths | Provides practical regression guardrails and avoids misleading benchmark drift from reused output directories | `python scripts/bench.py --profile quick/default/enterprise` (pass), `docs/BENCHMARKS.md` updated with thresholds and workflow | f1957a2 | medium | trusted
+- 2026-02-11 | Market baseline reinforced seeded reproducibility and zip/folder ingest expectations | Adjacent tooling patterns suggest deterministic seed behavior and easy export ingest are table-stakes UX expectations | Sources reviewed: Faker seeding docs + Slack export viewers (`hfaran/slack-export-viewer`, `Slacksky/viewexport`) | n/a | medium | untrusted
 - 2026-02-10 | Add `make smoke` minimal end-to-end flow | Provides a fast operator sanity check for the most important CLI path (generate, validate-db, export-jsonl, import-jsonl fresh/append) | `make smoke` (pass) + `make check` (31 passed) | dece286 | high | trusted
 - 2026-02-10 | Add `export-jsonl` export manifest (`export_manifest.json`) with row counts + filters | Makes incremental/filtered export runs observable and machine-readable without scraping stdout or inferring slice sizes from DB stats | `make check` (31 passed) + updated CLI tests assert manifest rows_written and filters | 5a5d0b2 | high | trusted
 - 2026-02-10 | Add `export-jsonl --incremental-state` and export max timestamps | Makes append-style export/import workflows less error-prone by auto-tracking the last-seen message/file timestamps and exposing max timestamps in `summary.json` | `make check` (31 passed) + CLI smoke re-ran `export-jsonl --incremental-state` and confirmed second run writes empty incremental `messages.jsonl`/`files.jsonl` | 9525212, cece02b | high | trusted
@@ -38,10 +41,16 @@
 - Slack integration paths are still not exercised against a real Slack workspace in this cycle (no credentials available in automation). A credentialed operator can now run `swsynth slack-smoke` / `make slack-smoke` to validate auth/scopes and basic Slack API connectivity, but end-to-end posting/provisioning remains to be smoke-tested in a sandbox.
 
 ## Next Prioritized Tasks
-- Start tracking benchmark baselines over time (targets + regression notes).
+- Add an `export-manifest verify` path to validate export artifact completeness/count metadata before import.
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
+- 2026-02-11 | `. .venv/bin/activate && pytest -q tests/test_generator.py tests/test_generator_determinism.py` | `3 passed` | pass
+- 2026-02-11 | `. .venv/bin/activate && make check` | `ruff/mypy ok; pytest: 34 passed; build produced 0.1.3 artifacts` | pass
+- 2026-02-11 | `. .venv/bin/activate && make smoke` | generate/validate/export/import/import-append completed successfully | pass
+- 2026-02-11 | `. .venv/bin/activate && python scripts/bench.py --profile quick --out ./bench_out/quick && python scripts/bench.py --profile default --out ./bench_out/default && python scripts/bench.py --profile enterprise --out ./bench_out/enterprise` | benchmark reports written for all three profiles and ranges recorded in docs | pass
+- 2026-02-11 | `gh run watch 21896683224 --exit-status` | CI concluded `success` for commit `a09a65e` | pass
+- 2026-02-11 | `gh run watch 21896720205 --exit-status` | CI concluded `success` for commit `f1957a2` | pass
 - 2026-02-10 | `. .venv/bin/activate && make smoke` | Generate/validate/export/import/import-append completed successfully | pass
 - 2026-02-10 | `. .venv/bin/activate && make check` | `ruff/mypy ok; pytest: 31 passed; build produced 0.1.3 artifacts` | pass
 - 2026-02-10 | `. .venv/bin/activate && pytest -q tests/test_cli_seed_import.py` | `2 passed` | pass
