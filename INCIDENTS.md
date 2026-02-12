@@ -37,3 +37,14 @@
   Evidence: CI run `21858065043` succeeded after the fix.
   Commit: cece02b
   Confidence: high
+
+### 2026-02-12T20:01:15Z | Codex execution failure
+- Date: 2026-02-12T20:01:15Z
+- Trigger: Codex execution failure
+- Impact: Repo session did not complete cleanly
+- Root Cause: codex exec returned a non-zero status
+- Fix: Captured failure logs and kept repository in a recoverable state
+- Prevention Rule: Re-run with same pass context and inspect pass log before retrying
+- Evidence: pass_log=logs/20260212-101456-slack-workspace-synth-cycle-2.log
+- Commit: pending
+- Confidence: medium
